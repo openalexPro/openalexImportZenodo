@@ -115,6 +115,8 @@ sources the deposit was found in) when writing a combined corpus.
   raw/<name>/_query.json            the query record (below)
   raw/<name>/_query.html            the same, readable, with links to the query on zenodo.org
   corpus/query=<name>/data.parquet  dataset 1: the works (deposits), OpenAlex schema + zenodo_* columns
+  corpus/query=<name>/_query.json   copies of the query record, next to the data (as pro_fetch())
+  corpus/query=<name>/_query.html
   corpus/_dataset.json                marker (deterministic; see openalexPro discussion)
   links/query=<name>/data.parquet   dataset 2: the links, one row per link (section 9)
   files/<recid>/<key>                 on request only (zenodo_download_files())

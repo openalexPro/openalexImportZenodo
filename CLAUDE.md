@@ -12,7 +12,7 @@ Second member of the `openalexImport<Source>` family. Design: `APPROACH.md`.
 ```
 zenodo_fetch()  -> <project_folder>/raw/<name>/<interval>/*.parquet   (id columns + full hit as `json`)
                    raw/<name>/_query.json, _query.html                (arguments, last run, watermark)
-zenodo_build()  -> corpus/query=<name>/data.parquet                   (one row per deposit)
+zenodo_build()  -> corpus/query=<name>/data.parquet                   (one row per deposit; + copies of _query.json/.html)
                    links/query=<name>/data.parquet                    (origin, target, link_type, ...)
 zenodo_fetch() calls zenodo_build() at the end (like pro_fetch(): a usable dataset after each call)
 zenodo_update() =  zenodo_fetch() with the stored arguments (incl. versions / stats)

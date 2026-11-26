@@ -35,7 +35,8 @@ It maps the stored Zenodo records of \code{name} to the OpenAlex works schema an
 }
 \details{
 \itemize{
-\item \verb{<project_folder>/corpus/query=<name>/data.parquet}: one row per deposit (all versions
+\item \verb{<project_folder>/corpus/query=<name>/data.parquet}, with a copy of the source's
+\verb{_query.json} and \verb{_query.html}: one row per deposit (all versions
 of a Zenodo upload), from its newest version, \code{id} = \verb{zenodo:<concept record ID>};
 \item \verb{<project_folder>/links/query=<name>/data.parquet}: the links from Zenodo's related
 identifiers, shaped like OpenAlex's links (see \code{\link[=zenodo_links]{zenodo_links()}}).

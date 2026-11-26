@@ -4,7 +4,8 @@
 #' other `versions` or `stats`, or after updating the package, without downloading again.
 #' It maps the stored Zenodo records of `name` to the OpenAlex works schema and writes
 #'
-#' - `<project_folder>/corpus/query=<name>/data.parquet`: one row per deposit (all versions
+#' - `<project_folder>/corpus/query=<name>/data.parquet`, with a copy of the source's
+#'   `_query.json` and `_query.html`: one row per deposit (all versions
 #'   of a Zenodo upload), from its newest version, `id` = `zenodo:<concept record ID>`;
 #' - `<project_folder>/links/query=<name>/data.parquet`: the links from Zenodo's related
 #'   identifiers, shaped like OpenAlex's links (see [zenodo_links()]).
@@ -64,6 +65,10 @@ zenodo_build <- function(project_folder, name = "zenodo", versions = c("latest",
   links <- file.path(project_folder, "links", paste0("query=", name), "data.parquet")
   write_parquet_sql(con, build_works_sql(name, versions, stats), corpus)
   write_parquet_sql(con, "SELECT * EXCLUDE (dep, rank) FROM links ORDER BY origin, target, relation", links)
+  # the query record next to the data, as pro_fetch() does (`_` files are skipped by arrow
+  # and openalexAPI)
+  rec <- file.path(raw, c("_query.json", "_query.html"))
+  file.copy(rec[file.exists(rec)], dirname(corpus), overwrite = TRUE)
   message(DBI::dbGetQuery(con, "SELECT count(DISTINCT conceptrecid) AS n FROM r")$n,
           " deposits -> ", corpus)
   invisible(c(corpus = corpus, links = links))

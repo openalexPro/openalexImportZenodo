@@ -64,6 +64,9 @@ test_that("zenodo_fetch() returns the built files; zenodo_build() rebuilds with 
   out <- quiet(zenodo_fetch(community = "c", project_folder = pf))
   expect_named(out, c("corpus", "links"))
   expect_true(all(file.exists(out)))
+  expect_setequal(list.files(dirname(out[["corpus"]])), c("data.parquet", "_query.json", "_query.html"))
+  expect_identical(readLines(file.path(dirname(out[["corpus"]]), "_query.json")),
+                   readLines(file.path(pf, "raw", "zenodo", "_query.json")))
   expect_equal(nrow(arrow::read_parquet(out[["corpus"]])), 1)
   quiet(zenodo_build(pf, versions = "all"))
   expect_equal(nrow(arrow::read_parquet(out[["corpus"]])), 2)

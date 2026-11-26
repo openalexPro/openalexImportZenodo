@@ -13,8 +13,9 @@ test_that("update reruns stored sources and builds; as_corpus copies them", {
   expect_equal(a$id, c("zenodo:11", "zenodo:21", "zenodo:31")) # versions = "all" kept
   out <- withr::local_tempdir()
   zenodo_as_corpus(pf, out, "b")
-  expect_equal(list.files(out, recursive = TRUE),
-               c("corpus/query=b/data.parquet", "links/query=b/data.parquet"))
+  expect_setequal(list.files(out, recursive = TRUE),
+                  c("corpus/query=b/_query.html", "corpus/query=b/_query.json",
+                    "corpus/query=b/data.parquet", "links/query=b/data.parquet"))
   expect_error(zenodo_as_corpus(pf, file.path(pf, "x")), "inside")
   expect_error(zenodo_update(pf, "nope"), "No source")
 })
