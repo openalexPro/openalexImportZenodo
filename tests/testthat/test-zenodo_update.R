@@ -1,0 +1,17 @@
+test_that("update reruns stored sources and builds; as_corpus copies them", {
+  z <- local_fake_zenodo(list(hit(11), hit(21, created = "2024-06-01T10:00:00+00:00")))
+  pf <- local_project()
+  quiet(zenodo_fetch(community = "c", interval = "month", project_folder = pf, name = "a"))
+  quiet(zenodo_fetch(query = "x", interval = "all", project_folder = pf, name = "b"))
+  expect_setequal(zenodo_names(pf), c("a", "b"))
+  z$hits <- c(z$hits, list(hit(31, created = "2024-07-01T10:00:00+00:00")))
+  expect_equal(quiet(zenodo_update(pf)), c("a", "b"))
+  expect_equal(jsonlite::read_json(file.path(pf, "raw", "a", "_query.json"))$source$interval, "month")
+  expect_equal(nrow(arrow::read_parquet(file.path(pf, "corpus", "query=a", "data.parquet"))), 3)
+  out <- withr::local_tempdir()
+  zenodo_as_corpus(pf, out, "b")
+  expect_equal(list.files(out, recursive = TRUE),
+               c("corpus/query=b/data.parquet", "links/query=b/data.parquet"))
+  expect_error(zenodo_as_corpus(pf, file.path(pf, "x")), "inside")
+  expect_error(zenodo_update(pf, "nope"), "No source")
+})

@@ -1,0 +1,12 @@
+.Rproj.user/
+.Rhistory
+.RData
+.Renviron
+.positron/
+*.tar.gz
+*.Rcheck/
+.DS_Store
+# Zenodo data belongs in project folders, not in the repo (test fixtures excepted)
+*.parquet
+*.duckdb
+.claude/settings.local.json

@@ -1,0 +1,32 @@
+Package: openalexImportZenodo
+Title: Import Zenodo Deposits as an OpenAlex Corpus
+Version: 0.0.0.9000
+Authors@R:
+    person("Rainer M.", "Krug", , "Rainer.Krug@sib.swiss", role = c("aut", "cre"),
+           comment = c(ORCID = "0000-0002-7490-0066"))
+Description: Downloads the records of Zenodo communities, Zenodo searches or lists of
+    Zenodo records into a project folder, keeps them up to date without downloading
+    everything again, and writes them as a works corpus in the OpenAlex schema for the
+    openalexPro packages, together with a table of the links between deposits and other
+    outputs taken from Zenodo's related identifiers. Uses Zenodo only.
+License: MIT + file LICENSE
+URL: https://github.com/openalexPro/openalexImportZenodo
+BugReports: https://github.com/openalexPro/openalexImportZenodo/issues
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+Depends: R (>= 4.1)
+Imports:
+    arrow,
+    DBI,
+    dplyr,
+    duckdb,
+    httr2,
+    jsonlite,
+    stats,
+    utils
+Suggests:
+    keyring,
+    testthat (>= 3.0.0),
+    withr
+Config/testthat/edition: 3
+Config/roxygen2/version: 8.1.1

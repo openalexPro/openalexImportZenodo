@@ -1,0 +1,499 @@
+{
+    "id": "10120033",
+    "created": "2023-11-14T08:12:12.015596+00:00",
+    "updated": "2025-09-07T12:23:11.350694+00:00",
+    "links": {
+        "self": "https://zenodo.org/api/records/10120033",
+        "self_html": "https://zenodo.org/records/10120033",
+        "preview_html": "https://zenodo.org/records/10120033?preview=1",
+        "doi": "https://doi.org/10.5281/zenodo.10120033",
+        "self_doi": "https://doi.org/10.5281/zenodo.10120033",
+        "self_doi_html": "https://zenodo.org/doi/10.5281/zenodo.10120033",
+        "reserve_doi": "https://zenodo.org/api/records/10120033/draft/pids/doi",
+        "parent": "https://zenodo.org/api/records/10120032",
+        "parent_html": "https://zenodo.org/records/10120032",
+        "parent_doi": "https://doi.org/10.5281/zenodo.10120032",
+        "parent_doi_html": "https://zenodo.org/doi/10.5281/zenodo.10120032",
+        "self_iiif_manifest": "https://zenodo.org/api/iiif/record:10120033/manifest",
+        "self_iiif_sequence": "https://zenodo.org/api/iiif/record:10120033/sequence/default",
+        "files": "https://zenodo.org/api/records/10120033/files",
+        "media_files": "https://zenodo.org/api/records/10120033/media-files",
+        "thumbnails": {
+            "10": "https://zenodo.org/api/iiif/record:10120033:v2.0.0_IPBES_NXS_DMR_6.1_financial%20flows%20figure.pdf/full/%5E10,/0/default.jpg",
+            "50": "https://zenodo.org/api/iiif/record:10120033:v2.0.0_IPBES_NXS_DMR_6.1_financial%20flows%20figure.pdf/full/%5E50,/0/default.jpg",
+            "100": "https://zenodo.org/api/iiif/record:10120033:v2.0.0_IPBES_NXS_DMR_6.1_financial%20flows%20figure.pdf/full/%5E100,/0/default.jpg",
+            "250": "https://zenodo.org/api/iiif/record:10120033:v2.0.0_IPBES_NXS_DMR_6.1_financial%20flows%20figure.pdf/full/%5E250,/0/default.jpg",
+            "750": "https://zenodo.org/api/iiif/record:10120033:v2.0.0_IPBES_NXS_DMR_6.1_financial%20flows%20figure.pdf/full/%5E750,/0/default.jpg",
+            "1200": "https://zenodo.org/api/iiif/record:10120033:v2.0.0_IPBES_NXS_DMR_6.1_financial%20flows%20figure.pdf/full/%5E1200,/0/default.jpg"
+        },
+        "latest": "https://zenodo.org/api/records/10120033/versions/latest",
+        "latest_html": "https://zenodo.org/records/10120033/latest",
+        "versions": "https://zenodo.org/api/records/10120033/versions",
+        "draft": "https://zenodo.org/api/records/10120033/draft",
+        "access_links": "https://zenodo.org/api/records/10120033/access/links",
+        "access_grants": "https://zenodo.org/api/records/10120033/access/grants",
+        "access_users": "https://zenodo.org/api/records/10120033/access/users",
+        "access_request": "https://zenodo.org/api/records/10120033/access/request",
+        "access": "https://zenodo.org/api/records/10120033/access",
+        "communities": "https://zenodo.org/api/records/10120033/communities",
+        "communities-suggestions": "https://zenodo.org/api/records/10120033/communities-suggestions",
+        "request_deletion": "https://zenodo.org/api/records/10120033/request-deletion",
+        "file_modification": "https://zenodo.org/api/records/10120033/file-modification",
+        "quota_increase": "https://zenodo.org/api/records/10120033/quota-increase",
+        "requests": "https://zenodo.org/api/records/10120033/requests"
+    },
+    "revision_id": 16,
+    "parent": {
+        "id": "10120032",
+        "access": {
+            "owned_by": {
+                "user": "1021885"
+            },
+            "settings": {
+                "allow_user_requests": true,
+                "allow_guest_requests": true,
+                "accept_conditions_text": null,
+                "secret_link_expiration": 30
+            }
+        },
+        "communities": {
+            "ids": [
+                "b74dc98e-4820-4ea2-b2ad-7b08a80bf85e"
+            ],
+            "default": "b74dc98e-4820-4ea2-b2ad-7b08a80bf85e",
+            "entries": [
+                {
+                    "id": "b74dc98e-4820-4ea2-b2ad-7b08a80bf85e",
+                    "created": "2019-03-29T12:59:47.274324+00:00",
+                    "updated": "2026-05-14T12:31:37.762079+00:00",
+                    "links": {
+
+                    },
+                    "revision_id": 4,
+                    "slug": "ipbes",
+                    "metadata": {
+                        "title": "Intergovernmental Science-Policy Platform on Biodiversity and Ecosystem Services (IPBES)",
+                        "type": {
+                            "id": "organization",
+                            "title": {
+                                "de": "Organisation",
+                                "en": "Organization"
+                            }
+                        },
+                        "website": "https://www.ipbes.net/",
+                        "organizations": [
+                            {
+                                "id": "01jn16g31",
+                                "name": "Intergovernmental Science-Policy Platform on Biodiversity and Ecosystem Services",
+                                "identifiers": [
+                                    {
+                                        "identifier": "01jn16g31",
+                                        "scheme": "ror"
+                                    },
+                                    {
+                                        "identifier": "grid.506391.8",
+                                        "scheme": "grid"
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    "access": {
+                        "visibility": "public",
+                        "members_visibility": "public",
+                        "member_policy": "closed",
+                        "record_submission_policy": "open",
+                        "review_policy": "closed"
+                    },
+                    "deletion_status": {
+                        "is_deleted": false,
+                        "status": "P"
+                    },
+                    "children": {
+                        "allow": false
+                    }
+                }
+            ]
+        },
+        "pids": {
+            "doi": {
+                "identifier": "10.5281/zenodo.10120032",
+                "provider": "datacite",
+                "client": "datacite"
+            }
+        }
+    },
+    "versions": {
+        "is_latest": true,
+        "index": 1
+    },
+    "is_published": true,
+    "is_draft": false,
+    "pids": {
+        "doi": {
+            "identifier": "10.5281/zenodo.10120033",
+            "provider": "datacite",
+            "client": "datacite"
+        },
+        "oai": {
+            "identifier": "oai:zenodo.org:10120033",
+            "provider": "oai"
+        }
+    },
+    "metadata": {
+        "resource_type": {
+            "id": "publication-datamanagementplan",
+            "title": {
+                "de": "Outputmanagementplan",
+                "en": "Output management plan"
+            }
+        },
+        "creators": [
+            {
+                "person_or_org": {
+                    "type": "personal",
+                    "name": "Pacheco, Andrea",
+                    "given_name": "Andrea",
+                    "family_name": "Pacheco",
+                    "identifiers": [
+                        {
+                            "identifier": "0000-0003-2673-3037",
+                            "scheme": "orcid"
+                        }
+                    ]
+                },
+                "affiliations": [
+                    {
+                        "id": "041nas322",
+                        "name": "University of Bonn",
+                        "identifiers": [
+                            {
+                                "identifier": "041nas322",
+                                "scheme": "ror"
+                            },
+                            {
+                                "identifier": "grid.10388.32",
+                                "scheme": "grid"
+                            },
+                            {
+                                "identifier": "0000 0001 2240 3300",
+                                "scheme": "isni"
+                            }
+                        ]
+                    }
+                ]
+            }
+        ],
+        "title": "IPBES Nexus Assessment - Chapter  6, data management report 1 <U+2013> Nature-positive financial flows figure",
+        "publisher": "Zenodo",
+        "publication_date": "2023-11-13",
+        "contributors": [
+            {
+                "person_or_org": {
+                    "type": "personal",
+                    "name": "van Huysen, Tiff",
+                    "given_name": "Tiff",
+                    "family_name": "van Huysen",
+                    "identifiers": [
+                        {
+                            "identifier": "0000-0002-3451-9770",
+                            "scheme": "orcid"
+                        }
+                    ]
+                },
+                "role": {
+                    "id": "contactperson",
+                    "title": {
+                        "de": "Kontaktperson",
+                        "en": "Contact person"
+                    }
+                },
+                "affiliations": [
+                    {
+                        "id": "01jn16g31",
+                        "name": "Intergovernmental Science-Policy Platform on Biodiversity and Ecosystem Services",
+                        "identifiers": [
+                            {
+                                "identifier": "01jn16g31",
+                                "scheme": "ror"
+                            },
+                            {
+                                "identifier": "grid.506391.8",
+                                "scheme": "grid"
+                            }
+                        ]
+                    }
+                ]
+            }
+        ],
+        "languages": [
+            {
+                "id": "eng",
+                "title": {
+                    "en": "English"
+                }
+            }
+        ],
+        "related_identifiers": [
+            {
+                "identifier": "https://github.com/pacheco-andrea/finFlows_nexus",
+                "scheme": "url",
+                "relation_type": {
+                    "id": "issupplementedby",
+                    "title": {
+                        "de": "Wird erg<U+00E4>nzt durch",
+                        "en": "Is supplemented by"
+                    }
+                },
+                "resource_type": {
+                    "id": "dataset",
+                    "title": {
+                        "de": "Datensatz",
+                        "en": "Dataset"
+                    }
+                }
+            },
+            {
+                "identifier": "10.5281/zenodo.15673657",
+                "scheme": "doi",
+                "relation_type": {
+                    "id": "issupplementto",
+                    "title": {
+                        "de": "Erg<U+00E4>nzt",
+                        "en": "Is supplement to"
+                    }
+                },
+                "resource_type": {
+                    "id": "publication-report",
+                    "title": {
+                        "de": "Bericht",
+                        "en": "Report"
+                    }
+                }
+            }
+        ],
+        "version": "v2.0.0",
+        "rights": [
+            {
+                "id": "cc-by-4.0",
+                "title": {
+                    "en": "Creative Commons Attribution 4.0 International"
+                },
+                "description": {
+                    "en": "The Creative Commons Attribution license allows re-distribution and re-use of a licensed work on the condition that the creator is appropriately credited."
+                },
+                "icon": "cc-by-icon",
+                "props": {
+                    "url": "https://creativecommons.org/licenses/by/4.0/legalcode",
+                    "scheme": "spdx"
+                }
+            }
+        ],
+        "description": "<p>This product is composed of two elements: 1) A data compilation that describes current estimates of the total annual volumes of biodiversity financing, how related this financing is to other nexus elements, and remaining biodiversity financing gaps. These data were sourced from a non-systematic literature review conducted within the scope of chapter 6 of the IPBES nexus assessment, and specific methodologies and sources for all estimates are documented in the raw datasets (BD_allFinanceFlows.csv). 2) A workflow and R-code scripts that produce figures that visualize these financial flows and their connection to other nexus elements that has been made available in a <a href=\"https://github.com/pacheco-andrea/finFlows_nexus\">Github repository<\/a>.<\/p>"
+    },
+    "custom_fields": {
+
+    },
+    "access": {
+        "record": "public",
+        "files": "public",
+        "embargo": {
+            "active": false,
+            "reason": null
+        },
+        "status": "open"
+    },
+    "files": {
+        "enabled": true,
+        "default_preview": "v2.0.0_IPBES_NXS_DMR_6.1_financial flows figure.pdf",
+        "order": [
+
+        ],
+        "count": 1,
+        "total_bytes": 166906,
+        "entries": {
+            "v2.0.0_IPBES_NXS_DMR_6.1_financial flows figure.pdf": {
+                "id": "ac883750-e374-43f5-955a-f95501a79667",
+                "checksum": "md5:cf8413f6d3bf475beaaba669e9f2f085",
+                "ext": "pdf",
+                "size": 166906,
+                "mimetype": "application/pdf",
+                "key": "v2.0.0_IPBES_NXS_DMR_6.1_financial flows figure.pdf",
+                "metadata": {
+
+                },
+                "access": {
+                    "hidden": false
+                }
+            }
+        }
+    },
+    "media_files": {
+        "enabled": true,
+        "order": [
+
+        ],
+        "count": 0,
+        "total_bytes": 0,
+        "entries": {
+
+        }
+    },
+    "status": "published",
+    "deletion_status": {
+        "is_deleted": false,
+        "status": "P"
+    },
+    "stats": {
+        "this_version": {
+            "views": 143,
+            "unique_views": 130,
+            "downloads": 114,
+            "unique_downloads": 98,
+            "data_volume": 19027284
+        },
+        "all_versions": {
+            "views": 143,
+            "unique_views": 130,
+            "downloads": 114,
+            "unique_downloads": 98,
+            "data_volume": 19027284
+        }
+    },
+    "swh": null,
+    "ui": {
+        "publication_date_l10n_medium": "Nov 13, 2023",
+        "publication_date_l10n_long": "November 13, 2023",
+        "created_date_l10n_long": "November 14, 2023",
+        "updated_date_l10n_long": "September 7, 2025",
+        "resource_type": {
+            "id": "publication-datamanagementplan",
+            "title_l10n": "Output management plan"
+        },
+        "custom_fields": {
+
+        },
+        "access_status": {
+            "id": "open",
+            "title_l10n": "Open",
+            "description_l10n": "The record and files are publicly accessible.",
+            "icon": "unlock",
+            "embargo_date_l10n": null,
+            "message_class": ""
+        },
+        "creators": {
+            "creators": [
+                {
+                    "person_or_org": {
+                        "type": "personal",
+                        "name": "Pacheco, Andrea",
+                        "given_name": "Andrea",
+                        "family_name": "Pacheco",
+                        "identifiers": [
+                            {
+                                "identifier": "0000-0003-2673-3037",
+                                "scheme": "orcid"
+                            }
+                        ]
+                    },
+                    "affiliations": [
+                        [
+                            1,
+                            "University of Bonn"
+                        ]
+                    ]
+                }
+            ],
+            "affiliations": [
+                [
+                    1,
+                    "University of Bonn",
+                    "041nas322"
+                ]
+            ]
+        },
+        "contributors": {
+            "contributors": [
+                {
+                    "person_or_org": {
+                        "type": "personal",
+                        "name": "van Huysen, Tiff",
+                        "given_name": "Tiff",
+                        "family_name": "van Huysen",
+                        "identifiers": [
+                            {
+                                "identifier": "0000-0002-3451-9770",
+                                "scheme": "orcid"
+                            }
+                        ]
+                    },
+                    "role": {
+                        "id": "contactperson",
+                        "title": "Contact person"
+                    },
+                    "affiliations": [
+                        [
+                            1,
+                            "Intergovernmental Science-Policy Platform on Biodiversity and Ecosystem Services"
+                        ]
+                    ]
+                }
+            ],
+            "affiliations": [
+                [
+                    1,
+                    "Intergovernmental Science-Policy Platform on Biodiversity and Ecosystem Services",
+                    "01jn16g31"
+                ]
+            ]
+        },
+        "languages": [
+            {
+                "id": "eng",
+                "title_l10n": "English"
+            }
+        ],
+        "description_stripped": "This product is composed of two elements: 1) A data compilation that describes current estimates of the total annual volumes of biodiversity financing, how related this financing is to other nexus elements, and remaining biodiversity financing gaps. These data were sourced from a non-systematic literature review conducted within the scope of chapter 6 of the IPBES nexus assessment, and specific methodologies and sources for all estimates are documented in the raw datasets (BD_allFinanceFlows.csv). 2) A workflow and R-code scripts that produce figures that visualize these financial flows and their connection to other nexus elements that has been made available in a Github repository.",
+        "version": "v2.0.0",
+        "related_identifiers": [
+            {
+                "identifier": "https://github.com/pacheco-andrea/finFlows_nexus",
+                "relation_type": {
+                    "id": "issupplementedby",
+                    "title_l10n": "Is supplemented by"
+                },
+                "scheme": "url",
+                "resource_type": {
+                    "id": "dataset",
+                    "title_l10n": "Dataset"
+                }
+            },
+            {
+                "identifier": "10.5281/zenodo.15673657",
+                "relation_type": {
+                    "id": "issupplementto",
+                    "title_l10n": "Is supplement to"
+                },
+                "scheme": "doi",
+                "resource_type": {
+                    "id": "publication-report",
+                    "title_l10n": "Report"
+                }
+            }
+        ],
+        "rights": [
+            {
+                "id": "cc-by-4.0",
+                "title_l10n": "Creative Commons Attribution 4.0 International",
+                "description_l10n": "The Creative Commons Attribution license allows re-distribution and re-use of a licensed work on the condition that the creator is appropriately credited.",
+                "icon": "cc-by-icon",
+                "props": {
+                    "url": "https://creativecommons.org/licenses/by/4.0/legalcode",
+                    "scheme": "spdx"
+                }
+            }
+        ],
+        "is_draft": false
+    }
+}
+

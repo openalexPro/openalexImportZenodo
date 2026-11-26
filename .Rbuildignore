@@ -1,0 +1,11 @@
+^APPROACH\.md$
+^\.claude$
+^.*\.Rproj$
+^\.Rproj\.user$
+^\.positron$
+^\.github$
+^\.gitignore$
+^\.DS_Store$
+^LICENSE\.md$
+^data-raw$
+^CLAUDE\.md$

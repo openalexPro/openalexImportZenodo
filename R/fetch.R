@@ -1,0 +1,168 @@
+#' Download or update Zenodo records
+#'
+#' Downloads all records (all versions) of a Zenodo community, a Zenodo search or a list
+#' of records into `<project_folder>/raw/<name>/`, one folder per interval of the records'
+#' creation date. Called again, it downloads only what changed:
+#'
+#' - **added or removed records**: the records per interval are counted on Zenodo (one
+#'   request per interval) and compared with the stored folders; intervals whose counts
+#'   differ are downloaded again. With `recheck_interval` / `recheck_per_run`, each run
+#'   also counts the next `recheck_per_run` finer intervals, which catches an addition and
+#'   a removal that cancel out within one interval.
+#' - **edited records** (counts unchanged): records updated on Zenodo since the last run
+#'   replace their stored copies.
+#'
+#' Zenodo allows 30 search requests per minute; requests are spaced at 2.2 s. With a Zenodo
+#' token (environment variable or keyring entry `API_zenodo_ro`, no scopes needed) a page
+#' has 100 instead of 25 records. Zenodo returns at most 10,000 records per search; larger
+#' intervals are split automatically.
+#'
+#' The arguments are stored in `raw/<name>/_query.json` together with the last run; the
+#' same is in `raw/<name>/_query.html`, readable, with a link to the search on zenodo.org.
+#' A later call for the same `name` must use the same arguments, or `full = TRUE`.
+#' [zenodo_update()] reruns a source from its stored arguments.
+#'
+#' @param community Zenodo community (the `<id>` in `zenodo.org/communities/<id>`).
+#' @param query Zenodo search string (as on zenodo.org, e.g. `"bats AND switzerland"`).
+#' @param ids Zenodo record IDs, concept record IDs or DOIs. Each is resolved to its
+#'   deposit, and all versions of these deposits are downloaded.
+#' @param communities Only records in these communities (with `query` or `ids`).
+#' @param resource_type Only records of these Zenodo resource types (e.g. `"dataset"`,
+#'   `"publication"`).
+#' @param from,to Only records created in `[from, to)` (`"YYYY-MM-DD"`); `NULL` = open.
+#' @param interval Interval of the creation date per folder and per count: `"week"`,
+#'   `"month"`, `"quarter"`, `"year"` or `"all"`. Finer intervals cost more requests per
+#'   update and re-download less per change.
+#' @param recheck_interval,recheck_per_run Rolling recheck: each run counts the next
+#'   `recheck_per_run` intervals of size `recheck_interval` (finer than `interval`).
+#' @param select `NULL` (default) to store each record completely, or the parts to store
+#'   (`"metadata.title"`, `"metadata.related_identifiers"`, `"stats"`, ...); identity fields
+#'   are always stored. Zenodo always sends complete records, so this saves disk space,
+#'   not download time.
+#' @param project_folder Project folder.
+#' @param name Name of the source within the project folder.
+#' @param full Download everything again; also needed to change the arguments of `name`.
+#'
+#' @return Invisibly, the path of `raw/<name>`.
+#' @export
+zenodo_fetch <- function(community = NULL, query = NULL, ids = NULL, communities = NULL,
+                         resource_type = NULL, from = NULL, to = NULL, interval = "year",
+                         recheck_interval = NULL, recheck_per_run = NULL, select = NULL,
+                         project_folder, name = "zenodo", full = FALSE) {
+  check_name(name)
+  cfg <- zenodo_source(community, query, ids, communities, resource_type, from, to, interval,
+                       recheck_interval, recheck_per_run, select)
+  dir <- file.path(project_folder, "raw", name)
+  rec_file <- file.path(dir, "_query.json")
+  old <- if (file.exists(rec_file)) jsonlite::read_json(rec_file, simplifyVector = TRUE)
+  if (!is.null(old) && !full && !same_source(old$source, cfg)) {
+    stop("`", name, "` was downloaded with other arguments (see ", rec_file, "). ",
+         "Use the same arguments, `zenodo_update()`, or `full = TRUE` to redefine it.",
+         call. = FALSE)
+  }
+  started <- Sys.time()
+  requests <- zenodo_requests()
+  if (!is.null(cfg$ids)) {
+    cfg$parents <- if (!full && !is.null(old$source$parents)) old$source$parents else zenodo_resolve_ids(cfg$ids)
+  }
+  if (full) old$updated_watermark <- NULL
+
+  changed <- check_zenodo(cfg, dir, full, old$recheck_last)
+  change <- fetch_zenodo(cfg, changed, dir)
+  if (!is.null(old$updated_watermark)) {
+    since <- format(as.POSIXct(old$updated_watermark, tz = "UTC", format = "%Y-%m-%dT%H:%M:%SZ") - 86400,
+                    "%Y-%m-%dT%H:%M:%S", tz = "UTC")
+    n_upd <- zenodo_upsert_updated(cfg, dir, since)
+    if (n_upd) {
+      change <- change %||% list(date = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"))
+      change$edited_records <- n_upd
+    }
+  }
+
+  d <- zenodo_id_table(dir, c("id", "conceptrecid"))
+  rec <- list(
+    source = cfg,
+    zenodo_url = zenodo_url(cfg),
+    zenodo_query = zenodo_query(cfg, cfg$from, cfg$to),
+    zenodo_web_url = zenodo_web_url(cfg),
+    records = nrow(d),
+    deposits = length(unique(d$conceptrecid)),
+    requests = zenodo_requests() - requests,
+    started = format(started, "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
+    finished = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
+    updated_watermark = format(started, "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
+    recheck_last = attr(changed, "recheck_last"),
+    last_change = change %||% old$last_change,
+    openalexImportZenodo = as.character(utils::packageVersion("openalexImportZenodo"))
+  )
+  write_query_record(rec, dir)
+  invisible(dir)
+}
+
+check_name <- function(name) {
+  if (!(is.character(name) && length(name) == 1 && grepl("^[A-Za-z0-9][A-Za-z0-9_.-]*$", name))) {
+    stop("`name` must be one word of letters, digits, `_`, `.` or `-`.", call. = FALSE)
+  }
+}
+
+# The fields that define what is downloaded (everything but the resolved `parents`).
+same_source <- function(a, b) {
+  f <- c("community", "query", "ids", "communities", "resource_type", "from", "to", "interval",
+         "select")
+  norm <- function(x) {
+    out <- lapply(f, function(k) as.character(unlist(x[[k]])))
+    out$recheck <- as.character(unlist(x$recheck))
+    out
+  }
+  identical(norm(a), norm(b))
+}
+
+write_query_record <- function(rec, dir) {
+  jsonlite::write_json(rec, file.path(dir, "_query.json"), auto_unbox = TRUE, pretty = TRUE,
+                       null = "null", digits = NA)
+  writeLines(query_html(rec, zenodo_bucket_counts(dir)), file.path(dir, "_query.html"))
+}
+
+# A readable, self-contained page of the query record.
+query_html <- function(rec, counts) {
+  esc <- function(x) {
+    x <- gsub("&", "&amp;", as.character(x), fixed = TRUE)
+    x <- gsub("<", "&lt;", x, fixed = TRUE)
+    gsub(">", "&gt;", x, fixed = TRUE)
+  }
+  row <- function(k, v) sprintf("<tr><th>%s</th><td>%s</td></tr>", esc(k), v)
+  s <- rec$source
+  src <- c(
+    if (!is.null(s$community)) row("Community", sprintf('<a href="https://zenodo.org/communities/%1$s">%1$s</a>', esc(s$community))),
+    if (!is.null(s$query)) row("Search", sprintf("<code>%s</code>", esc(s$query))),
+    if (!is.null(s$ids)) row("Records", esc(toString(s$ids))),
+    if (!is.null(s$communities)) row("In communities", esc(toString(s$communities))),
+    if (!is.null(s$resource_type)) row("Resource types", esc(toString(s$resource_type))),
+    row("Created", esc(sprintf("%s to %s", s$from %||% "start", s$to %||% "now"))),
+    row("Interval", esc(s$interval)),
+    if (!is.null(s$recheck)) row("Rolling recheck", esc(sprintf("%d %s(s) per run", s$recheck$per_run, s$recheck$interval))),
+    row("Stored", esc(if (is.null(s$select)) "complete records" else toString(s$select)))
+  )
+  ch <- rec$last_change
+  run <- c(
+    row("Zenodo query", sprintf('<code>%s</code><br><a href="%s">open on zenodo.org</a>',
+                                esc(rec$zenodo_query), esc(rec$zenodo_web_url))),
+    row("Records (versions)", esc(rec$records)),
+    row("Deposits", esc(rec$deposits)),
+    row("Last run", esc(sprintf("%s to %s, %d requests", rec$started, rec$finished, rec$requests))),
+    if (!is.null(ch)) row("Last change", esc(sprintf(
+      "%s: %s deposits added, %s removed; %s records added, %s removed; %s edited", ch$date,
+      ch$added_deposits %||% 0, ch$removed_deposits %||% 0, ch$added_records %||% 0,
+      ch$removed_records %||% 0, ch$edited_records %||% 0)))
+  )
+  iv <- if (length(counts)) sprintf("<tr><td>%s</td><td>%s</td></tr>", esc(names(counts)), counts) else character()
+  c("<!doctype html>", '<html lang="en"><head><meta charset="utf-8">',
+    "<title>Zenodo query</title>",
+    "<style>body{font-family:system-ui,sans-serif;max-width:60rem;margin:2rem auto;padding:0 1rem}",
+    "table{border-collapse:collapse;margin-bottom:1.5rem}th,td{text-align:left;padding:.25rem .75rem;border-bottom:1px solid #ddd;vertical-align:top}",
+    "code{white-space:pre-wrap}</style></head><body>",
+    "<h1>Zenodo query</h1>", "<h2>Source</h2><table>", src, "</table>",
+    "<h2>Run</h2><table>", run, "</table>",
+    "<h2>Records per interval</h2><table><tr><th>Interval</th><th>Records</th></tr>", iv, "</table>",
+    sprintf("<p>openalexImportZenodo %s</p></body></html>", esc(rec$openalexImportZenodo)))
+}
