@@ -1,16 +1,18 @@
 #' Download or update Zenodo records as a works corpus
 #'
 #' Downloads all records (all versions) of a Zenodo community, a Zenodo search or a list
-#' of records into `<project_folder>/raw/<name>/`, one folder per interval of the records'
+#' of records into `<project_folder>/raw/<name>/`, one folder per year of the records'
 #' creation date, and then builds the works corpus and the link table from them (see
 #' [zenodo_build()]), so that `<project_folder>/corpus/` can be used right away, e.g. with
 #' `openalexAPI::serve_corpus()`. Called again, it downloads only what changed:
 #'
-#' - **added or removed records**: the records per interval are counted on Zenodo (one
-#'   request per interval) and compared with the stored folders; intervals whose counts
-#'   differ are downloaded again. With `recheck_interval` / `recheck_per_run`, each run
-#'   also counts the next `recheck_per_run` finer intervals, which catches an addition and
-#'   a removal that cancel out within one interval.
+#' - **added or removed records**: the records per `interval` are counted on Zenodo (one
+#'   request per interval) and compared with the stored records of that interval (counted by
+#'   creation date); intervals whose counts differ are downloaded again and merged in. The
+#'   interval can be different in every call (weekly for an active source, monthly for a big
+#'   one, ...). With `recheck_interval` / `recheck_per_run`, each run also counts the next
+#'   `recheck_per_run` finer intervals, which catches an addition and a removal that cancel
+#'   out within one interval.
 #' - **edited records** (counts unchanged): records updated on Zenodo since the last run
 #'   replace their stored copies.
 #'
@@ -21,11 +23,11 @@
 #'
 #' The arguments are stored in `raw/<name>/_query.json` together with the last run; the
 #' same is in `raw/<name>/_query.html`, readable, with a link to the search on zenodo.org.
-#' A later call for the same `name` must use the same arguments, or `full = TRUE`.
-#' [zenodo_update()] reruns a source from its stored arguments.
-#'
-#' `versions` and `stats` only shape the corpus, not the download: they can change
-#' between calls, and [zenodo_build()] rebuilds with other values without downloading.
+#' A later call for the same `name` must ask for the same records (`community` / `query` /
+#' `ids`, `communities`, `resource_type`, `from`, `to`, `select`), or use `full = TRUE`.
+#' The check settings (`interval`, recheck) and `versions` / `stats` can change in every
+#' call; left `NULL`, they are those of the last call. [zenodo_update()] reruns a source from
+#' its stored arguments.
 #'
 #' @param community Zenodo community (the `<id>` in `zenodo.org/communities/<id>`).
 #' @param query Zenodo search string (as on zenodo.org, e.g. `"bats AND switzerland"`).
@@ -35,11 +37,13 @@
 #' @param resource_type Only records of these Zenodo resource types (e.g. `"dataset"`,
 #'   `"publication"`).
 #' @param from,to Only records created in `[from, to)` (`"YYYY-MM-DD"`); `NULL` = open.
-#' @param interval Interval of the creation date per folder and per count: `"week"`,
-#'   `"month"`, `"quarter"`, `"year"` or `"all"`. Finer intervals cost more requests per
-#'   update and re-download less per change.
+#' @param interval Interval of the creation date for the update check: `"week"`,
+#'   `"month"`, `"quarter"`, `"year"` or `"all"`; `NULL`: as last time (first time
+#'   `"year"`). Finer intervals cost more requests per check (2013 to now: ~14 by year,
+#'   ~167 by month, ~725 by week) and re-download less per change.
 #' @param recheck_interval,recheck_per_run Rolling recheck: each run counts the next
-#'   `recheck_per_run` intervals of size `recheck_interval` (finer than `interval`).
+#'   `recheck_per_run` intervals of size `recheck_interval` (finer than `interval`);
+#'   `NULL`: as last time; `recheck_per_run = 0` switches it off.
 #' @param select `NULL` (default) to store each record completely, or the parts to store
 #'   (`"metadata.title"`, `"metadata.related_identifiers"`, `"stats"`, ...); identity fields
 #'   are always stored. Zenodo always sends complete records, so this saves disk space,
@@ -47,22 +51,35 @@
 #' @param project_folder Project folder.
 #' @param name Name of the source within the project folder.
 #' @param full Download everything again; also needed to change the arguments of `name`.
-#' @inheritParams zenodo_build
+#' @param versions,stats As in [zenodo_build()]; `NULL`: as last time (first time
+#'   `"latest"`, `FALSE`).
 #'
 #' @return Invisibly, the paths of the corpus and link files (as [zenodo_build()]).
 #' @export
 zenodo_fetch <- function(community = NULL, query = NULL, ids = NULL, communities = NULL,
-                         resource_type = NULL, from = NULL, to = NULL, interval = "year",
+                         resource_type = NULL, from = NULL, to = NULL, interval = NULL,
                          recheck_interval = NULL, recheck_per_run = NULL, select = NULL,
                          project_folder, name = "zenodo", full = FALSE,
-                         versions = c("latest", "all"), stats = FALSE) {
-  versions <- match.arg(versions)
+                         versions = NULL, stats = NULL) {
   check_name(name)
-  cfg <- zenodo_source(community, query, ids, communities, resource_type, from, to, interval,
-                       recheck_interval, recheck_per_run, select)
   dir <- file.path(project_folder, "raw", name)
   rec_file <- file.path(dir, "_query.json")
   old <- if (file.exists(rec_file)) jsonlite::read_json(rec_file, simplifyVector = TRUE)
+  # check and build settings: as last time unless given
+  interval <- interval %||% old$source$interval %||% "year"
+  if (is.null(recheck_interval) && is.null(recheck_per_run) && !is.null(old$source$recheck)) {
+    recheck_interval <- old$source$recheck$interval
+    recheck_per_run <- old$source$recheck$per_run
+    if (match(recheck_interval, zenodo_intervals) >= match(interval, zenodo_intervals)) {
+      message("Rolling recheck by ", recheck_interval, " switched off: not finer than `interval`.")
+      recheck_interval <- recheck_per_run <- NULL
+    }
+  }
+  if (identical(as.numeric(recheck_per_run), 0)) recheck_interval <- recheck_per_run <- NULL
+  versions <- match.arg(versions %||% old$build$versions %||% "latest", c("latest", "all"))
+  stats <- isTRUE(stats %||% old$build$stats)
+  cfg <- zenodo_source(community, query, ids, communities, resource_type, from, to, interval,
+                       recheck_interval, recheck_per_run, select)
   if (!is.null(old) && !full && !same_source(old$source, cfg)) {
     stop("`", name, "` was downloaded with other arguments (see ", rec_file, "). ",
          "Use the same arguments, `zenodo_update()`, or `full = TRUE` to redefine it.",
@@ -75,8 +92,9 @@ zenodo_fetch <- function(community = NULL, query = NULL, ids = NULL, communities
   }
   if (full) old$updated_watermark <- NULL
 
+  zenodo_convert_layout(dir)
   changed <- check_zenodo(cfg, dir, full, old$recheck_last)
-  change <- fetch_zenodo(cfg, changed, dir)
+  change <- fetch_zenodo(cfg, changed, dir, full)
   if (!is.null(old$updated_watermark)) {
     since <- format(as.POSIXct(old$updated_watermark, tz = "UTC", format = "%Y-%m-%dT%H:%M:%SZ") - 86400,
                     "%Y-%m-%dT%H:%M:%S", tz = "UTC")
@@ -100,6 +118,7 @@ zenodo_fetch <- function(community = NULL, query = NULL, ids = NULL, communities
     finished = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
     updated_watermark = format(started, "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
     recheck_last = attr(changed, "recheck_last"),
+    check = list(interval = cfg$interval, changed = changed$bucket),
     last_change = change %||% old$last_change,
     build = list(versions = versions, stats = stats),
     openalexImportZenodo = as.character(utils::packageVersion("openalexImportZenodo"))
@@ -121,20 +140,16 @@ check_name <- function(name) {
 
 # The fields that define what is downloaded (everything but the resolved `parents`).
 same_source <- function(a, b) {
-  f <- c("community", "query", "ids", "communities", "resource_type", "from", "to", "interval",
-         "select")
-  norm <- function(x) {
-    out <- lapply(f, function(k) as.character(unlist(x[[k]])))
-    out$recheck <- as.character(unlist(x$recheck))
-    out
-  }
+  # not `interval` / `recheck`: they only set the check, and can change in every call
+  f <- c("community", "query", "ids", "communities", "resource_type", "from", "to", "select")
+  norm <- function(x) lapply(f, function(k) as.character(unlist(x[[k]])))
   identical(norm(a), norm(b))
 }
 
 write_query_record <- function(rec, dir) {
   jsonlite::write_json(rec, file.path(dir, "_query.json"), auto_unbox = TRUE, pretty = TRUE,
                        null = "null", digits = NA)
-  writeLines(query_html(rec, zenodo_bucket_counts(dir)), file.path(dir, "_query.html"))
+  writeLines(query_html(rec, zenodo_year_counts(dir)), file.path(dir, "_query.html"))
 }
 
 # A readable, self-contained page of the query record.
@@ -153,7 +168,7 @@ query_html <- function(rec, counts) {
     if (!is.null(s$communities)) row("In communities", esc(toString(s$communities))),
     if (!is.null(s$resource_type)) row("Resource types", esc(toString(s$resource_type))),
     row("Created", esc(sprintf("%s to %s", s$from %||% "start", s$to %||% "now"))),
-    row("Interval", esc(s$interval)),
+    row("Check interval", esc(s$interval)),
     if (!is.null(s$recheck)) row("Rolling recheck", esc(sprintf("%d %s(s) per run", s$recheck$per_run, s$recheck$interval))),
     row("Stored", esc(if (is.null(s$select)) "complete records" else toString(s$select)))
   )
@@ -163,6 +178,8 @@ query_html <- function(rec, counts) {
                                 esc(rec$zenodo_query), esc(rec$zenodo_web_url))),
     row("Records (versions)", esc(rec$records)),
     row("Deposits", esc(rec$deposits)),
+    row("Last check", esc(sprintf("%s intervals; changed: %s", rec$check$interval,
+                                  if (length(rec$check$changed)) toString(rec$check$changed) else "none"))),
     row("Last run", esc(sprintf("%s to %s, %d requests", rec$started, rec$finished, rec$requests))),
     if (!is.null(ch)) row("Last change", esc(sprintf(
       "%s: %s deposits added, %s removed; %s records added, %s removed; %s edited", ch$date,
@@ -177,6 +194,6 @@ query_html <- function(rec, counts) {
     "code{white-space:pre-wrap}</style></head><body>",
     "<h1>Zenodo query</h1>", "<h2>Source</h2><table>", src, "</table>",
     "<h2>Run</h2><table>", run, "</table>",
-    "<h2>Records per interval</h2><table><tr><th>Interval</th><th>Records</th></tr>", iv, "</table>",
+    "<h2>Records per year</h2><table><tr><th>Year</th><th>Records</th></tr>", iv, "</table>",
     sprintf("<p>openalexImportZenodo %s</p></body></html>", esc(rec$openalexImportZenodo)))
 }

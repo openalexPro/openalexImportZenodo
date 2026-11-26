@@ -4,18 +4,20 @@
 \alias{zenodo_update}
 \title{Update sources}
 \usage{
-zenodo_update(project_folder, name = NULL)
+zenodo_update(project_folder, name = NULL, interval = NULL)
 }
 \arguments{
 \item{project_folder}{Project folder.}
 
 \item{name}{Names of the sources; \code{NULL} (default) for all sources in \code{project_folder}.}
+
+\item{interval}{Check interval for this update (see \code{\link[=zenodo_fetch]{zenodo_fetch()}}); \code{NULL}: as last time.}
 }
 \value{
 Invisibly, the names of the sources updated.
 }
 \description{
 Runs \code{\link[=zenodo_fetch]{zenodo_fetch()}} for each source with the arguments stored in its
-\verb{raw/<name>/_query.json} (download arguments and the \code{versions} / \code{stats} of the last
-build), which also rebuilds its corpus and link table.
+\verb{raw/<name>/_query.json} (the query, and the check and build settings of the last call),
+which also rebuilds its corpus and link table.
 }

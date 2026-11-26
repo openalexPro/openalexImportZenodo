@@ -59,14 +59,16 @@ zenodo_url <- function(cfg) {
 
 # Zenodo search string for records of the source created in [from, to). NULL = open-ended.
 # For `ids`, `cfg$parents` holds the deposits (concept record IDs) they resolved to.
-zenodo_query <- function(cfg, from = NULL, to = NULL) {
+# `extra`: another condition, ANDed (e.g. on `updated`).
+zenodo_query <- function(cfg, from = NULL, to = NULL, extra = NULL) {
   b <- function(x) if (is.null(x) || is.na(x)) "*" else sprintf('"%s"', x)
   or <- function(field, x) sprintf("%s:(%s)", field, paste(x, collapse = " OR "))
   parts <- c(
     if (!is.null(cfg$query)) sprintf("(%s)", cfg$query),
     if (!is.null(cfg$ids)) or("parent.id", cfg$parents),
     if (!is.null(cfg$communities)) or("parent.communities.entries.slug", cfg$communities),
-    sprintf("created:[%s TO %s}", b(from), b(to))
+    sprintf("created:[%s TO %s}", b(from), b(to)),
+    extra
   )
   paste(parts, collapse = " AND ")
 }

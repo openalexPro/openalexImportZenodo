@@ -45,9 +45,7 @@ zenodo_build <- function(project_folder, name = "zenodo", versions = c("latest",
   if (!length(list.files(raw, "[.]parquet$", recursive = TRUE))) {
     stop("No records for `", name, "` in ", raw, "; run zenodo_fetch() first.", call. = FALSE)
   }
-  # No extensions are needed; shared_home = FALSE (duckdb >= 1.4) avoids writing to ~/.duckdb.
-  drv <- if ("shared_home" %in% names(formals(duckdb::duckdb))) duckdb::duckdb(shared_home = FALSE) else duckdb::duckdb()
-  con <- DBI::dbConnect(drv)
+  con <- zenodo_duckdb()
   on.exit(DBI::dbDisconnect(con, shutdown = TRUE))
   for (t in c("languages", "resource_types", "relations")) {
     d <- utils::read.csv(system.file("extdata", paste0(t, ".csv"), package = "openalexImportZenodo"),

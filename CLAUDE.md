@@ -10,7 +10,7 @@ Second member of the `openalexImport<Source>` family. Design: `APPROACH.md`.
 ## Data flow
 
 ```
-zenodo_fetch()  -> <project_folder>/raw/<name>/<interval>/*.parquet   (id columns + full hit as `json`)
+zenodo_fetch()  -> <project_folder>/raw/<name>/<year>/*.parquet       (all versions by year of `created`; id columns + full hit as `json`)
                    raw/<name>/_query.json, _query.html                (arguments, last run, watermark)
 zenodo_build()  -> corpus/query=<name>/data.parquet                   (one row per deposit; + copies of _query.json/.html)
                    links/query=<name>/data.parquet                    (origin, target, link_type, ...)
@@ -23,7 +23,7 @@ zenodo_update() =  zenodo_fetch() with the stored arguments (incl. versions / st
 | `R/api.R` | `zenodo_get()` (InvenioRDM `Accept` header, throttle 2.2 s, 429 handling), token `API_zenodo_ro` |
 | `R/intervals.R` | interval maths, copied unchanged from zenodo-openalex-collection |
 | `R/source.R` | argument validation (`zenodo_source()`), query strings, URLs, ID resolution |
-| `R/raw.R` | count check, range download with bisection, interval folders, `updated` upsert |
+| `R/raw.R` | count check (stored counts by `created`, any interval), range download with bisection, merge into year folders, `updated` upsert, conversion of the earlier layout |
 | `R/fetch.R` | `zenodo_fetch()`, `_query.json` / `_query.html` |
 | `R/build.R` | `zenodo_build()`: DuckDB `json_transform()` + SQL mapping |
 | `R/links.R` | link table (`build_links()`), `zenodo_links()` |
@@ -35,7 +35,7 @@ zenodo_update() =  zenodo_fetch() with the stored arguments (incl. versions / st
 - Zenodo only: no OpenAlex request in the import. OpenAlex enrichment would be a separate step.
 - `id` is always `zenodo:<conceptrecid>` (no `/`, unique when uppercased: openalexAPI's `id_key()`).
 - Code copied from `~/GitHub/zenodo-openalex-collection` stays independent of it; do not edit that repo from here.
-- Counts per interval are never stored: the check counts the rows of each interval folder.
+- Storage (year folders) and the check interval are independent: the interval can change in every call; counts are never stored, they are counted from `created` (UTC, fixed format, compared as text).
 - The full hit is kept in `json` (unless `select`), so mapping changes need no re-download.
 
 ## Commands

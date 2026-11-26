@@ -1,8 +1,13 @@
-# The raw store: raw/<name>/<interval>/*.parquet, one row per record (version), with the
-# ID columns and the full hit as JSON. Copied from zenodo-openalex-collection
-# (fetch_zenodo_range.R, fetch_zenodo.R, check_zenodo.R, zenodo_records.R,
-# zenodo_bucket_counts.R, zenodo_id_table.R, zenodo_deposit.R) and adapted:
-# InvenioRDM fields, `json` column, no files outside `dir`, state returned instead of written.
+# The raw store: raw/<name>/<year>/*.parquet, one row per record (version), by year of
+# `created`, with the ID columns and the full hit as JSON. Storage does not depend on the
+# check interval: the check counts stored records per interval by `created`, so any interval
+# can be checked at any time; changed intervals are downloaded and merged into their years.
+# Started from zenodo-openalex-collection (fetch_zenodo_range.R, fetch_zenodo.R,
+# check_zenodo.R, zenodo_records.R, zenodo_id_table.R, zenodo_deposit.R); adapted:
+# InvenioRDM fields, `json` column, year folders with merge, state returned instead of written.
+#
+# `created` is UTC in one fixed format ("2024-03-01T10:00:00.123456+00:00"), so it is
+# compared as text with interval limits ("2024-03-01", "2024-03-01T10:00:00").
 
 # Zenodo search hits -> one row per record (version). `json`: the hit as returned, or only
 # the `select`ed paths plus the identity fields.
@@ -66,22 +71,15 @@ zenodo_id_table <- function(dir, cols = c("id", "conceptrecid")) {
     as.data.frame()
 }
 
-# Stored records per interval: rows in each interval folder of `dir`, named by interval.
-# This is what the update check compares with Zenodo; no counts are stored anywhere.
-zenodo_bucket_counts <- function(dir) {
-  b <- list.dirs(dir, recursive = FALSE, full.names = FALSE)
-  b <- grep("^([0-9]{4}(-W[0-9]{2}|-[0-9]{2}|-Q[1-4])?|all)$", b, value = TRUE)
-  vapply(stats::setNames(b, b), function(x) nrow(arrow::open_dataset(file.path(dir, x))), 1)
-}
-
 # Writes all records created in [from, to) as parquet files of at most `chunk` records
 # into `dir` and returns the number of records written. Only one chunk is held in memory.
 # Zenodo returns at most 10,000 results per search, so larger ranges are halved until
 # each piece fits; files are named <from>_<to>_<n>.parquet after their piece.
 # `n`: the number of records if already known (saves a count request).
+# `extra`: another condition for the search (e.g. on `updated`).
 fetch_zenodo_range <- function(cfg, dir, from = NULL, to = NULL, limit = 10000, chunk = 10000,
-                               n = NULL) {
-  q <- zenodo_query(cfg, from, to)
+                               n = NULL, extra = NULL) {
+  q <- zenodo_query(cfg, from, to, extra)
   n <- n %||% zenodo_count(cfg, q)
   if (n >= limit) {
     # explicit formats: as.POSIXct() silently drops the time of "YYYY-MM-DDThh:mm:ss"
@@ -93,8 +91,8 @@ fetch_zenodo_range <- function(cfg, dir, from = NULL, to = NULL, limit = 10000, 
     # <= 1: halving a 1 s window gives the same whole-second window again (endless recursion)
     if (difftime(hi, lo, units = "secs") <= 1) stop("10,000+ records within one second: ", q)
     mid <- format(lo + (hi - lo) / 2, "%Y-%m-%dT%H:%M:%S", tz = "UTC")
-    return(fetch_zenodo_range(cfg, dir, from, mid, limit, chunk) +
-           fetch_zenodo_range(cfg, dir, mid, to, limit, chunk))
+    return(fetch_zenodo_range(cfg, dir, from, mid, limit, chunk, extra = extra) +
+           fetch_zenodo_range(cfg, dir, mid, to, limit, chunk, extra = extra))
   }
   if (n == 0) return(0)
   clean <- function(x) gsub("[^0-9A-Za-z-]", "", x)
@@ -126,15 +124,65 @@ fetch_zenodo_range <- function(cfg, dir, from = NULL, to = NULL, limit = 10000, 
   written
 }
 
+# DuckDB connection; no extensions are needed, so nothing is written to ~/.duckdb
+# (shared_home, duckdb >= 1.4).
+zenodo_duckdb <- function() {
+  drv <- if ("shared_home" %in% names(formals(duckdb::duckdb))) {
+    duckdb::duckdb(shared_home = FALSE)
+  } else {
+    duckdb::duckdb()
+  }
+  DBI::dbConnect(drv)
+}
+
+sql_str <- function(x) paste0("'", gsub("'", "''", x, fixed = TRUE), "'")
+sql_files <- function(files) sprintf("[%s]", paste(sql_str(files), collapse = ", "))
+
+# Stored parquet files by year folder (named list; empty if none).
+year_files <- function(dir) {
+  y <- grep("^[0-9]{4}$", list.dirs(dir, recursive = FALSE, full.names = FALSE), value = TRUE)
+  f <- lapply(stats::setNames(y, y), function(x) list.files(file.path(dir, x), "[.]parquet$", full.names = TRUE))
+  f[lengths(f) > 0]
+}
+
+# Stored records per year (for _query.html).
+zenodo_year_counts <- function(dir) {
+  f <- year_files(dir)
+  vapply(f, function(x) nrow(arrow::open_dataset(x)), 1)
+}
+
+# SQL condition: `created` in [from, to); NA = open end.
+sql_in_interval <- function(from, to) {
+  cond <- c(if (!is.na(from)) sprintf("created >= %s", sql_str(from)),
+            if (!is.na(to)) sprintf("created < %s", sql_str(to)))
+  if (length(cond)) paste(cond, collapse = " AND ") else "TRUE"
+}
+
+# Stored records in each interval of `b` (data frame with from, to; NA = open end), counted
+# by `created`. This is what the update check compares with Zenodo; nothing is stored.
+stored_counts <- function(dir, b) {
+  if (!nrow(b)) return(numeric())
+  files <- unlist(year_files(dir), use.names = FALSE)
+  if (!length(files)) return(rep(0, nrow(b)))
+  con <- zenodo_duckdb()
+  on.exit(DBI::dbDisconnect(con, shutdown = TRUE))
+  cols <- vapply(seq_len(nrow(b)), function(i) {
+    sprintf("count(*) FILTER (WHERE %s) AS b%d", sql_in_interval(b$from[i], b$to[i]), i)
+  }, "")
+  # ponytail: one FILTER per interval (~725 for weeks since 2013); a range join if that gets slow
+  n <- DBI::dbGetQuery(con, sprintf("SELECT %s FROM read_parquet(%s)", paste(cols, collapse = ", "),
+                                    sql_files(files)))
+  as.numeric(unlist(n[1, ], use.names = FALSE))
+}
+
 # Counts the records of each interval of the source on Zenodo (1 request per interval) and
-# compares them with the stored interval folders. Returns the intervals whose counts differ
-# (0 rows when nothing changed). Only an addition and a removal with the same number of
-# versions in the same interval go unnoticed; the rolling recheck (`cfg$recheck`) counts
-# the next `per_run` finer intervals each run to catch those.
+# compares them with the stored records of that interval. Returns the intervals whose counts
+# differ (0 rows when nothing changed). Only an addition and a removal with the same number
+# of versions in the same interval go unnoticed; the rolling recheck (`cfg$recheck`) also
+# counts the next `per_run` finer intervals, and a changed finer interval is returned by
+# itself (unless a changed interval already covers it).
 # `full`: all intervals are returned. `recheck_last`: last finer interval checked; the new
 # one is returned as attribute "recheck_last".
-# Stored folders of other intervals (changed `interval`, `from` or `to`) are returned
-# with new = 0, so the download removes them.
 check_zenodo <- function(cfg, dir, full = FALSE, recheck_last = NULL) {
   na_null <- function(x) if (is.na(x)) NULL else x
   count <- function(b) vapply(seq_len(nrow(b)), function(i) {
@@ -143,30 +191,22 @@ check_zenodo <- function(cfg, dir, full = FALSE, recheck_last = NULL) {
   recheck <- !full && !is.null(cfg$recheck)
 
   b <- zenodo_buckets(cfg)
-  old <- zenodo_bucket_counts(dir)
-  b$old <- unname(old[b$bucket])
-  b$old[is.na(b$old)] <- 0
+  b$old <- stored_counts(dir, b)
   b$new <- count(b)
-  hit <- character()
+  changed <- b[b$new != b$old | (full & (b$new > 0 | b$old > 0)), , drop = FALSE]
   if (recheck) {
     fine <- zenodo_buckets(utils::modifyList(cfg, list(interval = cfg$recheck$interval)))
     fine <- recheck_select(fine, cfg$recheck$per_run, recheck_last)
+    fine$old <- stored_counts(dir, fine)
     fine$new <- count(fine)
-    created <- zenodo_id_table(dir, "created")$created
-    cached <- table(zenodo_bucket_label(created, cfg$recheck$interval))
-    fine$old <- as.vector(cached[fine$bucket])
-    fine$old[is.na(fine$old)] <- 0
-    hit <- zenodo_overlaps(fine[fine$new != fine$old, ], b)
+    hit <- fine[fine$new != fine$old, , drop = FALSE]
+    covered <- vapply(seq_len(nrow(hit)), function(i) length(zenodo_overlaps(hit[i, ], changed)) > 0, NA)
+    changed <- rbind(changed, hit[!covered, , drop = FALSE])
   }
-  gone <- setdiff(names(old), b$bucket)
-  if (length(gone)) {
-    b <- rbind(b, data.frame(bucket = gone, from = NA, to = NA, old = unname(old[gone]), new = 0))
-  }
-  sel <- b$new != b$old | b$bucket %in% hit | (full & (b$new > 0 | b$old > 0))
-  changed <- b[sel, c("bucket", "from", "to", "old", "new")]
+  changed <- changed[order(changed$from, na.last = FALSE), c("bucket", "from", "to", "old", "new"), drop = FALSE]
   rownames(changed) <- NULL
   message(sprintf("%d intervals checked (%s%s), %d records on Zenodo, %d to download%s",
-                  nrow(b) - length(gone), cfg$interval,
+                  nrow(b), cfg$interval,
                   if (full) ", full re-download" else if (recheck) {
                     sprintf("; recheck of %d %s(s) %s to %s", nrow(fine), cfg$recheck$interval,
                             fine$bucket[1], fine$bucket[nrow(fine)])
@@ -178,23 +218,24 @@ check_zenodo <- function(cfg, dir, full = FALSE, recheck_last = NULL) {
   changed
 }
 
-# Downloads the intervals the check found changed into `dir`/<interval>/.
-# Consecutive changed intervals with fewer than 10,000 records together are downloaded in
-# one query and split into their folders by `created`; the counts from the check are
-# reused, so no extra count requests are needed. Everything is downloaded into a temporary
-# folder first and replaces the old interval folders only when complete, so an interrupted
-# download leaves the old data intact. Intervals now empty are removed.
-# Returns the last change (added / removed deposits and records), or NULL if nothing changed.
-fetch_zenodo <- function(cfg, changed, dir, limit = 10000) {
+# Downloads the intervals the check found changed and merges them into the year folders of
+# `dir`. Consecutive changed intervals with fewer than 10,000 records together are downloaded
+# in one query; the counts from the check are reused, so no extra count requests are needed.
+# Everything is downloaded into a temporary folder first; only then are the years replaced.
+# `full`: all stored records are replaced. Returns the last change (added / removed deposits
+# and records), or NULL if nothing changed.
+fetch_zenodo <- function(cfg, changed, dir, full = FALSE, limit = 10000) {
   dir.create(dir, recursive = TRUE, showWarnings = FALSE)
+  if (!nrow(changed)) return(NULL)
   ids <- c("id", "conceptdoi", "doi")
   before <- zenodo_id_table(dir, ids)
   tmp_root <- paste0(dir, ".tmp")
   unlink(tmp_root, recursive = TRUE)
+  on.exit(unlink(tmp_root, recursive = TRUE))
   na_null <- function(x) if (is.na(x)) NULL else x
 
   # runs of consecutive intervals to download together
-  get <- changed[changed$new > 0, ]
+  get <- changed[changed$new > 0, , drop = FALSE]
   run <- integer(nrow(get))
   for (i in seq_len(nrow(get))) {
     joins <- i > 1 && identical(get$to[i - 1], get$from[i]) &&
@@ -203,34 +244,18 @@ fetch_zenodo <- function(cfg, changed, dir, limit = 10000) {
   }
   for (r in unique(run)) {
     g <- get[run == r, ]
-    raw <- file.path(tmp_root, paste0(".run", r))
-    dir.create(raw, recursive = TRUE)
-    fetch_zenodo_range(cfg, raw, na_null(g$from[1]), na_null(g$to[nrow(g)]), n = sum(g$new))
-    if (nrow(g) == 1) {
-      file.rename(raw, file.path(tmp_root, g$bucket))
-      next
-    }
-    # several intervals (< 10,000 records together): split by created
-    d <- dplyr::collect(arrow::open_dataset(raw))
-    lab <- zenodo_bucket_label(d$created, cfg$interval)
-    clean <- function(x, open) if (is.na(x)) open else gsub("[^0-9A-Za-z-]", "", x)
-    for (i in seq_len(nrow(g))) {
-      b <- g$bucket[i]
-      dir.create(file.path(tmp_root, b))
-      stem <- paste(clean(g$from[i], "start"), clean(g$to[i], "now"), sep = "_")
-      arrow::write_parquet(d[lab == b, ], file.path(tmp_root, b, paste0(stem, "_001.parquet")))
-    }
-    unlink(raw, recursive = TRUE)
+    d <- file.path(tmp_root, paste0("run", r))
+    dir.create(d, recursive = TRUE)
+    fetch_zenodo_range(cfg, d, na_null(g$from[1]), na_null(g$to[nrow(g)]), n = sum(g$new))
   }
-  for (b in changed$bucket) {
-    unlink(file.path(dir, b), recursive = TRUE)
-    if (dir.exists(file.path(tmp_root, b))) file.rename(file.path(tmp_root, b), file.path(dir, b))
+  drop <- if (full) "TRUE" else {
+    paste0("(", vapply(seq_len(nrow(changed)), function(i) sql_in_interval(changed$from[i], changed$to[i]), ""),
+           ")", collapse = " OR ")
   }
-  unlink(tmp_root, recursive = TRUE)
+  zenodo_merge(dir, tmp_root, drop, if (!full) changed)
 
   after <- zenodo_id_table(dir, ids)
   if (anyDuplicated(after$id)) stop("Duplicate records in ", dir, "; run with `full = TRUE`.", call. = FALSE)
-  if (!nrow(changed)) return(NULL)
   n <- function(a, b) length(setdiff(unique(a), unique(b)))
   dep_before <- zenodo_deposit(before$conceptdoi, before$doi)
   dep_after <- zenodo_deposit(after$conceptdoi, after$doi)
@@ -243,35 +268,84 @@ fetch_zenodo <- function(cfg, changed, dir, limit = 10000) {
   )
 }
 
+# Merges the records downloaded below `tmp_root` into the year folders of `dir`: each year is
+# rewritten with its stored records except those matching `drop` (SQL), plus the downloaded
+# records of that year. Years touched: those of the downloaded records, and the stored years
+# overlapping `intervals` (data frame with from, to), or all stored years if `intervals` is
+# NULL and `drop` is "TRUE". Each year folder is replaced atomically; a run that stops between
+# two years leaves counts that differ from Zenodo, which the next check repairs.
+zenodo_merge <- function(dir, tmp_root, drop, intervals = NULL) {
+  old <- year_files(dir)
+  new <- list.files(tmp_root, "[.]parquet$", recursive = TRUE, full.names = TRUE)
+  new <- new[!startsWith(new, file.path(tmp_root, "merged"))]
+  con <- zenodo_duckdb()
+  on.exit(DBI::dbDisconnect(con, shutdown = TRUE))
+  new_years <- if (length(new)) {
+    DBI::dbGetQuery(con, sprintf("SELECT DISTINCT left(created, 4) AS y FROM read_parquet(%s)", sql_files(new)))$y
+  } else character()
+  touched <- if (!is.null(intervals)) {
+    names(old)[vapply(names(old), function(y) {
+      lo <- sprintf("%s-01-01", y)
+      hi <- sprintf("%d-01-01", as.integer(y) + 1L)
+      any((is.na(intervals$to) | intervals$to > lo) & (is.na(intervals$from) | intervals$from < hi))
+    }, NA)]
+  } else if (identical(drop, "TRUE")) names(old) else character()
+  years <- sort(union(touched, new_years))
+  out_root <- file.path(tmp_root, "merged")
+  rows <- integer()
+  for (y in years) {
+    parts <- c(
+      if (!is.null(old[[y]])) sprintf("SELECT * FROM read_parquet(%s, union_by_name = true) WHERE NOT (%s)",
+                                      sql_files(old[[y]]), drop),
+      if (y %in% new_years) sprintf("SELECT * FROM read_parquet(%s, union_by_name = true) WHERE left(created, 4) = %s",
+                                    sql_files(new), sql_str(y))
+    )
+    out <- file.path(out_root, y, "data_001.parquet")
+    dir.create(dirname(out), recursive = TRUE, showWarnings = FALSE)
+    rows[y] <- DBI::dbExecute(con, sprintf(
+      "COPY (SELECT * FROM (%s) ORDER BY created) TO %s (FORMAT parquet, COMPRESSION zstd)",
+      paste(parts, collapse = " UNION ALL BY NAME "), sql_str(out)))
+  }
+  for (y in years) {
+    unlink(file.path(dir, y), recursive = TRUE)
+    if (rows[[y]] > 0) file.rename(file.path(out_root, y), file.path(dir, y))
+  }
+  invisible(rows)
+}
+
 # Metadata edits do not change the counts: records of the source updated since `since`
-# replace their stored copies (in the interval folder of their `created`). Each touched
-# folder is rewritten as one file, atomically. Returns the number of records replaced.
+# replace their stored copies (merged into the year of their `created`). More than 10,000
+# edits are split by creation date like any download. Returns the number of records replaced.
 zenodo_upsert_updated <- function(cfg, dir, since) {
-  q <- paste0(zenodo_query(cfg, cfg$from, cfg$to), sprintf(' AND updated:["%s" TO *]', since))
-  res <- zenodo_search(cfg, q, size = zenodo_page_size(), sort = "oldest")
-  if (res$hits$total >= 10000) {
-    stop("10,000+ records edited since ", since, "; run with `full = TRUE`.", call. = FALSE)
-  }
-  hits <- res$hits$hits
-  while (!is.null(res$links[["next"]])) {
-    res <- zenodo_get(res$links[["next"]])
-    hits <- c(hits, res$hits$hits)
-  }
-  if (!length(hits)) return(0)
-  new <- zenodo_records(hits, cfg$select)
-  lab <- zenodo_bucket_label(new$created, cfg$interval)
-  for (b in unique(lab)) {
-    folder <- file.path(dir, b)
-    nb <- new[lab == b, , drop = FALSE]
-    old <- if (dir.exists(folder)) as.data.frame(dplyr::collect(arrow::open_dataset(folder))) else nb[0, ]
-    old <- old[!old$id %in% nb$id, names(nb), drop = FALSE]
-    tmp <- paste0(folder, ".tmp")
-    unlink(tmp, recursive = TRUE)
-    dir.create(tmp, recursive = TRUE)
-    arrow::write_parquet(rbind(old, nb), file.path(tmp, "updated_001.parquet"))
-    unlink(folder, recursive = TRUE)
-    file.rename(tmp, folder)
-  }
-  message(length(hits), " record(s) edited since ", since, " replaced")
-  length(hits)
+  tmp_root <- paste0(dir, ".upd")
+  unlink(tmp_root, recursive = TRUE)
+  on.exit(unlink(tmp_root, recursive = TRUE))
+  d <- file.path(tmp_root, "run1")
+  dir.create(d, recursive = TRUE)
+  n <- fetch_zenodo_range(cfg, d, cfg$from, cfg$to, extra = sprintf('updated:["%s" TO *]', since))
+  if (!n) return(0)
+  new <- list.files(d, "[.]parquet$", full.names = TRUE)
+  zenodo_merge(dir, tmp_root, sprintf("id IN (SELECT id FROM read_parquet(%s))", sql_files(new)))
+  message(n, " record(s) edited since ", since, " replaced")
+  n
+}
+
+# Downloads made with the earlier layout (one folder per check interval, e.g. 2024-03/,
+# 2024-W05/, all/) are rewritten as year folders, locally. Year folders (also those of the
+# earlier interval "year") are already in the current layout.
+zenodo_convert_layout <- function(dir) {
+  sub <- list.dirs(dir, recursive = FALSE, full.names = FALSE)
+  old <- sub[!grepl("^[0-9]{4}$", sub)]
+  if (!length(old)) return(invisible(FALSE))
+  files <- list.files(file.path(dir, sub), "[.]parquet$", full.names = TRUE)
+  tmp_root <- paste0(dir, ".convert")
+  unlink(tmp_root, recursive = TRUE)
+  on.exit(unlink(tmp_root, recursive = TRUE))
+  d <- file.path(tmp_root, "run1")
+  dir.create(d, recursive = TRUE)
+  file.copy(files, file.path(d, paste0(seq_along(files), ".parquet")))
+  zenodo_merge(dir, tmp_root, "TRUE") # no year folders yet: writes them from the copies
+  unlink(file.path(dir, old), recursive = TRUE)
+  message("Converted ", dir, " to one folder per year of `created`.")
+  invisible(TRUE)
 }

@@ -1,14 +1,15 @@
 #' Update sources
 #'
 #' Runs [zenodo_fetch()] for each source with the arguments stored in its
-#' `raw/<name>/_query.json` (download arguments and the `versions` / `stats` of the last
-#' build), which also rebuilds its corpus and link table.
+#' `raw/<name>/_query.json` (the query, and the check and build settings of the last call),
+#' which also rebuilds its corpus and link table.
 #'
 #' @param project_folder Project folder.
 #' @param name Names of the sources; `NULL` (default) for all sources in `project_folder`.
+#' @param interval Check interval for this update (see [zenodo_fetch()]); `NULL`: as last time.
 #' @return Invisibly, the names of the sources updated.
 #' @export
-zenodo_update <- function(project_folder, name = NULL) {
+zenodo_update <- function(project_folder, name = NULL, interval = NULL) {
   name <- name %||% zenodo_names(project_folder)
   for (n in name) {
     rec_file <- file.path(project_folder, "raw", n, "_query.json")
@@ -18,10 +19,8 @@ zenodo_update <- function(project_folder, name = NULL) {
     message("== ", n)
     zenodo_fetch(community = s$community, query = s$query, ids = s$ids,
                  communities = s$communities, resource_type = s$resource_type,
-                 from = s$from, to = s$to, interval = s$interval,
-                 recheck_interval = s$recheck$interval, recheck_per_run = s$recheck$per_run,
-                 select = s$select, project_folder = project_folder, name = n,
-                 versions = rec$build$versions %||% "latest", stats = isTRUE(rec$build$stats))
+                 from = s$from, to = s$to, interval = interval, select = s$select,
+                 project_folder = project_folder, name = n)
   }
   invisible(name)
 }

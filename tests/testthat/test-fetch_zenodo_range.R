@@ -32,3 +32,17 @@ test_that("10,000+ records within one second stop", {
   expect_error(run_range(rep("2017-02-08T12:00:00", 150), "2017-02-08", "2017-02-09", limit = 100),
                "within one second")
 })
+
+test_that("an extra condition (edited records) is kept while splitting", {
+  day <- as.POSIXct("2017-02-08", tz = "UTC")
+  created <- format(day + 1:150 * 300, "%Y-%m-%dT%H:%M:%S+00:00")
+  hits <- lapply(seq_along(created), function(i) {
+    hit(i, created = created[i], updated = if (i <= 120) "2026-01-05T00:00:00+00:00" else created[i])
+  })
+  local_fake_zenodo(hits)
+  dir <- withr::local_tempdir()
+  n <- quiet(fetch_zenodo_range(zenodo_source(community = "x"), dir, "2017-02-08", "2017-02-09",
+                                limit = 100, extra = 'updated:["2026-01-01" TO *]'))
+  expect_equal(n, 120)
+  expect_equal(sort(as.integer(zenodo_id_table(dir)$id)), 1:120)
+})

@@ -12,15 +12,15 @@ zenodo_fetch(
   resource_type = NULL,
   from = NULL,
   to = NULL,
-  interval = "year",
+  interval = NULL,
   recheck_interval = NULL,
   recheck_per_run = NULL,
   select = NULL,
   project_folder,
   name = "zenodo",
   full = FALSE,
-  versions = c("latest", "all"),
-  stats = FALSE
+  versions = NULL,
+  stats = NULL
 )
 }
 \arguments{
@@ -38,12 +38,14 @@ deposit, and all versions of these deposits are downloaded.}
 
 \item{from, to}{Only records created in \verb{[from, to)} (\code{"YYYY-MM-DD"}); \code{NULL} = open.}
 
-\item{interval}{Interval of the creation date per folder and per count: \code{"week"},
-\code{"month"}, \code{"quarter"}, \code{"year"} or \code{"all"}. Finer intervals cost more requests per
-update and re-download less per change.}
+\item{interval}{Interval of the creation date for the update check: \code{"week"},
+\code{"month"}, \code{"quarter"}, \code{"year"} or \code{"all"}; \code{NULL}: as last time (first time
+\code{"year"}). Finer intervals cost more requests per check (2013 to now: ~14 by year,
+~167 by month, ~725 by week) and re-download less per change.}
 
 \item{recheck_interval, recheck_per_run}{Rolling recheck: each run counts the next
-\code{recheck_per_run} intervals of size \code{recheck_interval} (finer than \code{interval}).}
+\code{recheck_per_run} intervals of size \code{recheck_interval} (finer than \code{interval});
+\code{NULL}: as last time; \code{recheck_per_run = 0} switches it off.}
 
 \item{select}{\code{NULL} (default) to store each record completely, or the parts to store
 (\code{"metadata.title"}, \code{"metadata.related_identifiers"}, \code{"stats"}, ...); identity fields
@@ -56,32 +58,28 @@ not download time.}
 
 \item{full}{Download everything again; also needed to change the arguments of \code{name}.}
 
-\item{versions}{\code{"latest"} (default): one row per deposit, from its newest version;
-\code{"all"}: one row per version, \code{id} = \verb{zenodo:<record ID>}. Links are always between
-deposits.}
-
-\item{stats}{Add Zenodo's views and downloads (\code{zenodo_stats}) and the time they were
-downloaded (\code{zenodo_stats_date}). They grow daily without changing a record, so they
-are only as recent as the record's last download. Needs \code{stats} stored (the default
-of \code{\link[=zenodo_fetch]{zenodo_fetch()}}).}
+\item{versions, stats}{As in \code{\link[=zenodo_build]{zenodo_build()}}; \code{NULL}: as last time (first time
+\code{"latest"}, \code{FALSE}).}
 }
 \value{
 Invisibly, the paths of the corpus and link files (as \code{\link[=zenodo_build]{zenodo_build()}}).
 }
 \description{
 Downloads all records (all versions) of a Zenodo community, a Zenodo search or a list
-of records into \verb{<project_folder>/raw/<name>/}, one folder per interval of the records'
+of records into \verb{<project_folder>/raw/<name>/}, one folder per year of the records'
 creation date, and then builds the works corpus and the link table from them (see
 \code{\link[=zenodo_build]{zenodo_build()}}), so that \verb{<project_folder>/corpus/} can be used right away, e.g. with
 \code{openalexAPI::serve_corpus()}. Called again, it downloads only what changed:
 }
 \details{
 \itemize{
-\item \strong{added or removed records}: the records per interval are counted on Zenodo (one
-request per interval) and compared with the stored folders; intervals whose counts
-differ are downloaded again. With \code{recheck_interval} / \code{recheck_per_run}, each run
-also counts the next \code{recheck_per_run} finer intervals, which catches an addition and
-a removal that cancel out within one interval.
+\item \strong{added or removed records}: the records per \code{interval} are counted on Zenodo (one
+request per interval) and compared with the stored records of that interval (counted by
+creation date); intervals whose counts differ are downloaded again and merged in. The
+interval can be different in every call (weekly for an active source, monthly for a big
+one, ...). With \code{recheck_interval} / \code{recheck_per_run}, each run also counts the next
+\code{recheck_per_run} finer intervals, which catches an addition and a removal that cancel
+out within one interval.
 \item \strong{edited records} (counts unchanged): records updated on Zenodo since the last run
 replace their stored copies.
 }
@@ -93,9 +91,9 @@ intervals are split automatically.
 
 The arguments are stored in \verb{raw/<name>/_query.json} together with the last run; the
 same is in \verb{raw/<name>/_query.html}, readable, with a link to the search on zenodo.org.
-A later call for the same \code{name} must use the same arguments, or \code{full = TRUE}.
-\code{\link[=zenodo_update]{zenodo_update()}} reruns a source from its stored arguments.
-
-\code{versions} and \code{stats} only shape the corpus, not the download: they can change
-between calls, and \code{\link[=zenodo_build]{zenodo_build()}} rebuilds with other values without downloading.
+A later call for the same \code{name} must ask for the same records (\code{community} / \code{query} /
+\code{ids}, \code{communities}, \code{resource_type}, \code{from}, \code{to}, \code{select}), or use \code{full = TRUE}.
+The check settings (\code{interval}, recheck) and \code{versions} / \code{stats} can change in every
+call; left \code{NULL}, they are those of the last call. \code{\link[=zenodo_update]{zenodo_update()}} reruns a source from
+its stored arguments.
 }

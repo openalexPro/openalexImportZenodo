@@ -55,8 +55,10 @@ openalexAPI::serve_corpus("proj/corpus", port = 8000)
 # Links into a deposit
 zenodo_links("proj", target = "zenodo:13850301")
 
-# Later: update every source with its stored arguments and rebuild
+# Later: update every source with its stored arguments and rebuild;
+# the check interval can be chosen per call (week, month, quarter, year, all)
 zenodo_update("proj")
+zenodo_fetch(community = "ipbes", project_folder = "proj", interval = "month")
 ```
 
 Each deposit (all versions of a Zenodo upload) is one work with `id` `zenodo:<concept record
