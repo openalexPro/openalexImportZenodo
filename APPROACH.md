@@ -115,14 +115,15 @@ sources the deposit was found in) when writing a combined corpus.
 
 ```
 <project_folder>/
-  raw/<name>/<year>/*.parquet       every version, by year of `created`; id columns + `json`
+  raw/<name>/<period>/*.parquet     every version, by year (or quarter/month, `parquet_split`) of `created`; id columns + `json`
   raw/<name>/_query.json            the query record (below)
   raw/<name>/_query.html            the same, readable, with links to the query on zenodo.org
-  corpus/query=<name>/data.parquet  dataset 1: the works (deposits), OpenAlex schema + zenodo_* columns
+  corpus/query=<name>/*.parquet     dataset 1: the works (deposits), OpenAlex schema + zenodo_* columns;
+                                    data.parquet, or split by `parquet_split` (2024-03.parquet, part_001.parquet, ...)
   corpus/query=<name>/_query.json   copies of the query record, next to the data (as pro_fetch())
   corpus/query=<name>/_query.html
   corpus/_dataset.json                marker (deterministic; see openalexPro discussion)
-  links/query=<name>/data.parquet   dataset 2: the links, one row per link (section 9)
+  links/query=<name>/*.parquet      dataset 2: the links, one row per link (section 9), split like the corpus
   files/<recid>/<key>                 on request only (zenodo_download_files())
 ```
 
@@ -145,8 +146,22 @@ year locally (seconds to tens of seconds), small next to the download at 2.2 s p
 Each year folder is replaced atomically; a run that stops between two years leaves counts that
 differ from Zenodo, and the next run repairs them.
 
-Downloads made with the earlier layout (one folder per check interval) are converted to year
-folders locally on the next run, without downloading.
+**`parquet_split`** (argument of `zenodo_fetch()` / `zenodo_build()`, decided 2026-11-26; the
+counterpart of `pro_fetch(compact_parquet = )`): how the files are split, for big sources.
+
+| `parquet_split` | `corpus/` and `links/` | `raw/` |
+|---|---|---|
+| `"none"` (first-time default) | one `data.parquet` | one folder per year |
+| `"year"`, `"quarter"`, `"month"` | one file per period of the deposit's **Zenodo creation date** (`created` of its first version; never changes, so a deposit stays in its file): `2024.parquet`, `2024-Q1.parquet`, `2024-03.parquet` | one folder per period of each record's `created` (`2024/`, `2024-Q1/`, `2024-03/`) |
+| a number, e.g. `250000` | files of at most that many works, `part_001.parquet`, ... | one folder per year, files of at most that many records |
+
+Links are split by the creation date of the deposit that declared them. For a big source a
+period split also keeps each update's local rewrite small (a changed week rewrites one month,
+not a year). Like the other build settings, `NULL` means "as last time", and the value is kept
+in `_query.json`; a changed split rewrites `raw/` locally on the next run, without downloading.
+
+Downloads made with an earlier layout (one folder per check interval), or stored with another
+`parquet_split`, are rewritten locally on the next run, without downloading.
 
 **`_query.json` / `_query.html`**, as `pro_fetch()` writes `_query.json` + `_query_oql.html`
 and `pro_collection()` writes `_collection.json`. One file replaces zenodo-openalex-collection's
@@ -390,10 +405,10 @@ whole vocabulary — one place to change.
 
 ```r
 zenodo_fetch(community = , query = , ids = , ..., select = NULL, project_folder, name = "zenodo",
-             full = FALSE, versions = "latest", stats = FALSE)
+             full = FALSE, versions = NULL, stats = NULL, parquet_split = NULL)
                                             # download / update raw (sections 3, 6), then build
                                             # corpus + links, like pro_fetch(): usable after each call
-zenodo_build(project_folder, name = "zenodo", versions = "latest", stats = FALSE)
+zenodo_build(project_folder, name = "zenodo", versions = NULL, stats = NULL, parquet_split = NULL)
                                             # rebuild only (other versions / stats, new package version)
 zenodo_update(project_folder, name = NULL)  # zenodo_fetch() with the stored arguments
 zenodo_as_corpus(project_folder, out, name = NULL, ...)  # subset export, as policy_as_corpus()
