@@ -20,27 +20,70 @@ zenodo_build <- function(project_folder, name = "zenodo", versions = NULL, stats
   }
 
   con <- zenodo_duckdb()
-  on.exit(DBI::dbDisconnect(con, shutdown = TRUE))
+  tmp <- paste0(raw, ".build")
+  unlink(tmp, recursive = TRUE)
+  dir.create(file.path(tmp, "works"), recursive = TRUE)
+  on.exit({
+    DBI::dbDisconnect(con, shutdown = TRUE)
+    unlink(tmp, recursive = TRUE)
+  })
+  DBI::dbExecute(con, sprintf("SET temp_directory = %s", sql_str(file.path(tmp, "spill"))))
   for (t in c("languages", "resource_types", "relations")) {
     d <- utils::read.csv(system.file("extdata", paste0(t, ".csv"), package = "openalexImportZenodo"),
                          stringsAsFactors = FALSE, na.strings = "")
     duckdb::duckdb_register(con, t, d)
   }
+  src <- sprintf("read_parquet(%s, hive_partitioning = false, union_by_name = true)",
+                 sql_files(stored_files(raw)))
+  # 1. the small fields of every record (no JSON kept): versions, newest version, links
   DBI::dbExecute(con, sprintf(
-    "CREATE TEMP TABLE r AS SELECT *, json_transform(json, %s) AS j
-     FROM read_parquet(%s, hive_partitioning = false, union_by_name = true)",
-    sql_str(build_schema()), sql_files(stored_files(raw))))
+    "CREATE TEMP TABLE rs AS SELECT id, conceptrecid, doi, created, version_index, is_latest,
+       json_extract_string(json, '$.metadata.version') AS version,
+       json_extract_string(json, '$.metadata.publication_date') AS publication_date,
+       json_transform(json_extract(json, '$.metadata.related_identifiers'), %s) AS related
+     FROM %s", sql_str(build_schema("related")), src))
   build_links(con)
   # the deposit's Zenodo creation date (first version): decides its file with a period split
-  DBI::dbExecute(con, "CREATE TEMP TABLE fc AS SELECT conceptrecid, min(created) AS first_created FROM r GROUP BY ALL")
+  DBI::dbExecute(con, "CREATE TEMP TABLE fc AS SELECT conceptrecid, min(created) AS first_created FROM rs GROUP BY ALL")
+  DBI::dbExecute(con, "CREATE TEMP TABLE v AS
+    SELECT conceptrecid, list(struct_pack(recid := id, doi := doi, version := version,
+             publication_date := publication_date, created := created)
+             ORDER BY version_index, created) AS versions
+    FROM rs GROUP BY conceptrecid")
+  DBI::dbExecute(con, "CREATE TEMP TABLE refs AS
+    SELECT origin, list(target ORDER BY target) AS referenced_works FROM links
+    WHERE link_type = 'https://openalex.org/link-types/citation' AND target_in_corpus
+    GROUP BY origin")
+  DBI::dbExecute(con, sprintf("CREATE TEMP TABLE sel AS SELECT id, created FROM rs %s",
+    if (versions == "latest") "QUALIFY row_number() OVER (PARTITION BY conceptrecid
+       ORDER BY is_latest DESC NULLS LAST, version_index DESC NULLS LAST, created DESC) = 1" else ""))
 
+  # 2. the chosen records in batches by `created`, each mapped to a temporary file
   part <- if (split %in% split_periods) sql_label(split, "fc.first_created") else "NULL"
+  lo <- unique(DBI::dbGetQuery(con, sprintf(
+    "SELECT min(created) AS lo FROM (SELECT created, (row_number() OVER (ORDER BY created) - 1) // %d AS k
+     FROM sel) GROUP BY k ORDER BY lo", as.integer(build_batch)))$lo)
+  for (i in seq_along(lo)) {
+    cond <- sql_in_interval(lo[i], if (i < length(lo)) lo[i + 1] else NA)
+    DBI::dbExecute(con, "DROP TABLE IF EXISTS r")
+    DBI::dbExecute(con, sprintf(
+      "CREATE TEMP TABLE r AS SELECT s.*, json_transform(s.json, %s) AS j FROM %s s
+       WHERE %s AND s.id IN (SELECT id FROM sel WHERE %s)",
+      sql_str(build_schema()), src, cond, cond))
+    DBI::dbExecute(con, sprintf(
+      "COPY (SELECT w.*, %s AS zenodo_part FROM (%s) w JOIN fc ON fc.conceptrecid = w.zenodo_conceptrecid
+             ORDER BY w.id) TO %s (FORMAT parquet, COMPRESSION zstd)",
+      part, build_works_sql(name, versions, stats),
+      sql_str(file.path(tmp, "works", sprintf("b%06d.parquet", i)))))
+  }
+  DBI::dbExecute(con, "DROP TABLE IF EXISTS r")
+
+  # 3. split into the corpus and link files
   corpus <- file.path(project_folder, "corpus", paste0("query=", name))
   links <- file.path(project_folder, "links", paste0("query=", name))
-  write_split(con, sprintf(
-    "SELECT w.*, %s AS zenodo_part FROM (%s) w JOIN fc ON fc.conceptrecid = w.zenodo_conceptrecid",
-    part, build_works_sql(name, versions, stats)), corpus, split, "id",
-    extra = file.path(raw, c("_query.json", "_query.html")))
+  write_split(con, sprintf("SELECT * FROM read_parquet(%s)",
+                           sql_files(list.files(file.path(tmp, "works"), full.names = TRUE))),
+              corpus, split, extra = file.path(raw, c("_query.json", "_query.html")))
   write_split(con, sprintf(
     "SELECT l.* EXCLUDE (dep, rank), %s AS zenodo_part FROM links l JOIN fc ON fc.conceptrecid = l.dep",
     part), links, split, "origin, target, relation")
@@ -48,14 +91,19 @@ zenodo_build <- function(project_folder, name = "zenodo", versions = NULL, stats
   invisible(c(corpus = corpus, links = links))
 }
 
+# Records mapped per batch of the build (memory: about this many full records).
+build_batch <- 50000
+
 # Writes the rows of `sql` (with a column `zenodo_part`, dropped) to the folder `out` as one
-# data.parquet, one file per part (`split` a period), or files of about `split` rows.
+# data.parquet, one file per part (`split` a period), or files of about `split` rows, ordered
+# by `order` (NULL: in the order of `sql`).
 # Written to `<out>.tmp` and swapped in only when complete. `extra` files are copied along.
-write_split <- function(con, sql, out, split, order, extra = character()) {
+write_split <- function(con, sql, out, split, order = NULL, extra = character()) {
   tmp <- paste0(out, ".tmp")
   unlink(tmp, recursive = TRUE)
   dir.create(dirname(out), recursive = TRUE, showWarnings = FALSE)
-  sel <- sprintf("SELECT * EXCLUDE (zenodo_part) FROM (%s) ORDER BY %s", sql, order)
+  ord <- if (length(order)) paste(" ORDER BY", order) else "" # none: as given (streamed)
+  sel <- sprintf("SELECT * EXCLUDE (zenodo_part) FROM (%s)%s", sql, ord)
   opts <- "FORMAT parquet, COMPRESSION zstd"
   if (identical(split, "none")) {
     dir.create(tmp)
@@ -67,8 +115,8 @@ write_split <- function(con, sql, out, split, order, extra = character()) {
     parts <- file.path(tmp, "parts")
     dir.create(tmp)
     DBI::dbExecute(con, sprintf(
-      "COPY (SELECT * FROM (%s) ORDER BY %s) TO %s (%s, PARTITION_BY (zenodo_part), WRITE_PARTITION_COLUMNS false)",
-      sql, order, sql_str(parts), opts))
+      "COPY (SELECT * FROM (%s)%s) TO %s (%s, PARTITION_BY (zenodo_part), WRITE_PARTITION_COLUMNS false)",
+      sql, ord, sql_str(parts), opts))
     for (d in list.dirs(parts, recursive = FALSE)) {
       f <- list.files(d, "[.]parquet$", full.names = TRUE)
       lab <- sub("^zenodo_part=", "", basename(d))
@@ -87,7 +135,8 @@ write_split <- function(con, sql, out, split, order, extra = character()) {
 
 # The parts of a record that are mapped, as a json_transform() structure. Missing parts
 # (e.g. not stored because of `select`) become NULL.
-build_schema <- function() {
+build_schema <- function(part = c("all", "related")) {
+  part <- match.arg(part)
   V <- "VARCHAR"
   idsch <- list(list(identifier = V, scheme = V))
   counts <- list(views = "BIGINT", unique_views = "BIGINT", downloads = "BIGINT",
@@ -114,6 +163,7 @@ build_schema <- function() {
     custom_fields = list(`journal:journal` = list(title = V, volume = V, issue = V, pages = V)),
     stats = list(this_version = counts, all_versions = counts)
   )
+  if (part == "related") s <- s$metadata$related_identifiers
   as.character(jsonlite::toJSON(s, auto_unbox = TRUE))
 }
 
@@ -133,22 +183,8 @@ build_works_sql <- function(name, versions, stats) {
   record_url <- "'https://zenodo.org/records/' || r.id"
   pdf <- sprintf("list_filter(map_keys(r.j.files.entries), lambda k: lower(k) LIKE '%%.pdf')[1]")
   lic <- sprintf("lower(%s.rights[1].id)", m)
-  sel <- if (versions == "latest") {
-    "QUALIFY row_number() OVER (PARTITION BY conceptrecid
-       ORDER BY is_latest DESC NULLS LAST, version_index DESC NULLS LAST, created DESC) = 1"
-  } else ""
   json_text <- function(path) sprintf("CAST(json_extract(r.json, '%s') AS VARCHAR)", path)
   sprintf("
-WITH v AS (
-  SELECT conceptrecid, list(struct_pack(recid := id, doi := doi, version := j.metadata.version,
-           publication_date := j.metadata.publication_date, created := created)
-           ORDER BY version_index, created) AS versions
-  FROM r GROUP BY conceptrecid
-), refs AS (
-  SELECT origin, list(target ORDER BY target) AS referenced_works FROM links
-  WHERE link_type = 'https://openalex.org/link-types/citation' AND target_in_corpus
-  GROUP BY origin
-), d AS (SELECT * FROM r %s)
 SELECT
   'zenodo:' || %s AS id,
   'https://doi.org/' || lower(%s) AS doi,
@@ -219,13 +255,11 @@ SELECT
   %s AS zenodo_additional_descriptions,
   %s AS zenodo_identifiers,
   %s AS zenodo_swh%s
-FROM d AS r
+FROM r
 LEFT JOIN v USING (conceptrecid)
 LEFT JOIN refs ON refs.origin = 'zenodo:' || r.conceptrecid
 LEFT JOIN resource_types rt ON rt.resource_type = r.j.metadata.resource_type.id
-LEFT JOIN languages lang ON lang.code3 = r.j.metadata.languages[1].id
-ORDER BY id",
-    sel,
+LEFT JOIN languages lang ON lang.code3 = r.j.metadata.languages[1].id",
     if (versions == "latest") "r.conceptrecid" else "r.id",
     if (versions == "latest") "coalesce(nullif(r.conceptdoi, ''), r.doi)" else "r.doi",
     m, m, sql_strip_html(paste0(m, ".description")), m, m,

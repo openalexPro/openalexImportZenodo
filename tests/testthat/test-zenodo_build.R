@@ -123,3 +123,22 @@ test_that("parquet_split as a number gives files of about that many works", {
   expect_equal(list.files(file.path(pf, "raw", "zenodo"), "^[0-9]"), "2024") # raw/: years
   expect_error(zenodo_fetch(community = "c", parquet_split = "week", project_folder = pf), "parquet_split")
 })
+
+test_that("building in small batches gives the same corpus and links", {
+  hits <- list(hit(11, 10, created = "2023-05-01T10:00:00+00:00", index = 1L, latest = FALSE),
+               hit(12, 10, created = "2024-02-01T10:00:00+00:00", index = 2L,
+                   related = list(rel("10.5281/zenodo.21", "cites"))),
+               hit(21, 20, created = "2024-06-01T10:00:00+00:00"),
+               hit(31, 30, created = "2024-06-01T10:00:00+00:00"), # same `created` as 21
+               hit(41, 40, created = "2025-01-01T10:00:00+00:00"))
+  pf <- build_from(hits)
+  one <- works(pf)
+  local_mocked_bindings(build_batch = 2)
+  quiet(zenodo_build(pf))
+  many <- works(pf)
+  expect_setequal(many$id, one$id)
+  expect_equal(many[order(many$id), ], one, ignore_attr = TRUE)
+  expect_equal(many$referenced_works[many$id == "zenodo:10"][[1]], "zenodo:20")
+  expect_equal(nrow(zenodo_links(pf)), 1)
+  expect_false(dir.exists(file.path(pf, "raw", "zenodo.build")))
+})

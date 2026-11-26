@@ -1,4 +1,4 @@
-# Table `links` in `con` from the related identifiers of all versions in table `r`.
+# Table `links` in `con` from the related identifiers of all versions in table `rs`.
 #
 # Shaped like OpenAlex's links (api.openalex.org/links: origin, target, link_type), one row
 # per link in the direction "origin does X to target": relations Zenodo declares the other
@@ -11,12 +11,12 @@ build_links <- function(con) {
   DBI::dbExecute(con, "
 CREATE TEMP TABLE links AS
 WITH ids AS (
-  SELECT id AS recid, conceptrecid FROM r
-  UNION SELECT conceptrecid, conceptrecid FROM r
+  SELECT id AS recid, conceptrecid FROM rs
+  UNION SELECT conceptrecid, conceptrecid FROM rs
 ), rel AS (
   SELECT r.conceptrecid AS dep, r.id AS declared_on, r.version_index, r.created,
-         unnest(r.j.metadata.related_identifiers) AS x
-  FROM r
+         unnest(r.related) AS x
+  FROM rs r
 ), n AS (
   SELECT *,
     trim(x.identifier) AS idn,

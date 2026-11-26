@@ -25,7 +25,7 @@ zenodo_update() =  zenodo_fetch() with the stored arguments (incl. versions / st
 | `R/source.R` | argument validation (`zenodo_source()`), query strings, URLs, ID resolution |
 | `R/raw.R` | count check (stored counts by `created`, any interval), range download with bisection, merge into part folders (year, or `parquet_split` period) in one partitioned COPY, `updated` upsert, layout conversion |
 | `R/fetch.R` | `zenodo_fetch()`, `_query.json` / `_query.html` |
-| `R/build.R` | `zenodo_build()` (internal; its user docs live in `zenodo_fetch()`'s help): DuckDB `json_transform()` + SQL mapping |
+| `R/build.R` | `zenodo_build()` (internal; its user docs live in `zenodo_fetch()`'s help): small fields of all records (table `rs`: versions, links), then full records in batches of `build_batch` by `created` (`json_transform()` + SQL mapping) into temp files, then split. Never load the whole source: 2.4M records are ~40 GB of JSON |
 | `R/links.R` | link table (`build_links()`), `zenodo_links()` |
 | `R/update.R` | `zenodo_update()`, `zenodo_as_corpus()` |
 | `inst/extdata/` | `resource_types.csv`, `languages.csv` (from `data-raw/languages.R`), `relations.csv` |
