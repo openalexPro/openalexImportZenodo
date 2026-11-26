@@ -51,8 +51,10 @@
 #' @param project_folder Project folder.
 #' @param name Name of the source within the project folder.
 #' @param full Download everything again; also needed to change the arguments of `name`.
-#' @param versions,stats As in [zenodo_build()]; `NULL`: as last time (first time
-#'   `"latest"`, `FALSE`).
+#' @param versions,stats,parquet_split As in [zenodo_build()]; `NULL`: as last time (first
+#'   time `"latest"`, `FALSE`, `"none"`). `parquet_split` also sets how `raw/` is split: one
+#'   folder per period (`"year"`, `"quarter"`, `"month"`) of each record's creation date, else
+#'   one folder per year (with files of about that many records for a number).
 #'
 #' @return Invisibly, the paths of the corpus and link files (as [zenodo_build()]).
 #' @export
@@ -60,7 +62,7 @@ zenodo_fetch <- function(community = NULL, query = NULL, ids = NULL, communities
                          resource_type = NULL, from = NULL, to = NULL, interval = NULL,
                          recheck_interval = NULL, recheck_per_run = NULL, select = NULL,
                          project_folder, name = "zenodo", full = FALSE,
-                         versions = NULL, stats = NULL) {
+                         versions = NULL, stats = NULL, parquet_split = NULL) {
   check_name(name)
   dir <- file.path(project_folder, "raw", name)
   rec_file <- file.path(dir, "_query.json")
@@ -78,6 +80,7 @@ zenodo_fetch <- function(community = NULL, query = NULL, ids = NULL, communities
   if (identical(as.numeric(recheck_per_run), 0)) recheck_interval <- recheck_per_run <- NULL
   versions <- match.arg(versions %||% old$build$versions %||% "latest", c("latest", "all"))
   stats <- isTRUE(stats %||% old$build$stats)
+  split <- check_split(parquet_split %||% old$build$parquet_split %||% "none")
   cfg <- zenodo_source(community, query, ids, communities, resource_type, from, to, interval,
                        recheck_interval, recheck_per_run, select)
   if (!is.null(old) && !full && !same_source(old$source, cfg)) {
@@ -92,13 +95,13 @@ zenodo_fetch <- function(community = NULL, query = NULL, ids = NULL, communities
   }
   if (full) old$updated_watermark <- NULL
 
-  zenodo_convert_layout(dir)
+  zenodo_convert_layout(dir, split)
   changed <- check_zenodo(cfg, dir, full, old$recheck_last)
-  change <- fetch_zenodo(cfg, changed, dir, full)
+  change <- fetch_zenodo(cfg, changed, dir, full, split)
   if (!is.null(old$updated_watermark)) {
     since <- format(as.POSIXct(old$updated_watermark, tz = "UTC", format = "%Y-%m-%dT%H:%M:%SZ") - 86400,
                     "%Y-%m-%dT%H:%M:%S", tz = "UTC")
-    n_upd <- zenodo_upsert_updated(cfg, dir, since)
+    n_upd <- zenodo_upsert_updated(cfg, dir, since, split)
     if (n_upd) {
       change <- change %||% list(date = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"))
       change$edited_records <- n_upd
@@ -120,7 +123,7 @@ zenodo_fetch <- function(community = NULL, query = NULL, ids = NULL, communities
     recheck_last = attr(changed, "recheck_last"),
     check = list(interval = cfg$interval, changed = changed$bucket),
     last_change = change %||% old$last_change,
-    build = list(versions = versions, stats = stats),
+    build = list(versions = versions, stats = stats, parquet_split = split),
     openalexImportZenodo = as.character(utils::packageVersion("openalexImportZenodo"))
   )
   write_query_record(rec, dir)
@@ -129,7 +132,7 @@ zenodo_fetch <- function(community = NULL, query = NULL, ids = NULL, communities
     for (part in c("corpus", "links")) unlink(file.path(project_folder, part, paste0("query=", name)), recursive = TRUE)
     return(invisible(NULL))
   }
-  zenodo_build(project_folder, name, versions = versions, stats = stats)
+  zenodo_build(project_folder, name, versions = versions, stats = stats, parquet_split = split)
 }
 
 check_name <- function(name) {
@@ -149,7 +152,7 @@ same_source <- function(a, b) {
 write_query_record <- function(rec, dir) {
   jsonlite::write_json(rec, file.path(dir, "_query.json"), auto_unbox = TRUE, pretty = TRUE,
                        null = "null", digits = NA)
-  writeLines(query_html(rec, zenodo_year_counts(dir)), file.path(dir, "_query.html"))
+  writeLines(query_html(rec, zenodo_part_counts(dir)), file.path(dir, "_query.html"))
 }
 
 # A readable, self-contained page of the query record.
@@ -194,6 +197,6 @@ query_html <- function(rec, counts) {
     "code{white-space:pre-wrap}</style></head><body>",
     "<h1>Zenodo query</h1>", "<h2>Source</h2><table>", src, "</table>",
     "<h2>Run</h2><table>", run, "</table>",
-    "<h2>Records per year</h2><table><tr><th>Year</th><th>Records</th></tr>", iv, "</table>",
+    "<h2>Stored records</h2><table><tr><th>Folder</th><th>Records</th></tr>", iv, "</table>",
     sprintf("<p>openalexImportZenodo %s</p></body></html>", esc(rec$openalexImportZenodo)))
 }

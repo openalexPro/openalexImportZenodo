@@ -7,8 +7,9 @@
 zenodo_build(
   project_folder,
   name = "zenodo",
-  versions = c("latest", "all"),
-  stats = FALSE
+  versions = NULL,
+  stats = NULL,
+  parquet_split = NULL
 )
 }
 \arguments{
@@ -16,31 +17,42 @@ zenodo_build(
 
 \item{name}{Name of the source.}
 
-\item{versions}{\code{"latest"} (default): one row per deposit, from its newest version;
-\code{"all"}: one row per version, \code{id} = \verb{zenodo:<record ID>}. Links are always between
-deposits.}
+\item{versions}{\code{"latest"} (first-time default): one row per deposit, from its newest
+version; \code{"all"}: one row per version, \code{id} = \verb{zenodo:<record ID>}. Links are always
+between deposits.}
 
-\item{stats}{Add Zenodo's views and downloads (\code{zenodo_stats}) and the time they were
-downloaded (\code{zenodo_stats_date}). They grow daily without changing a record, so they
-are only as recent as the record's last download. Needs \code{stats} stored (the default
-of \code{\link[=zenodo_fetch]{zenodo_fetch()}}).}
+\item{stats}{\code{TRUE} adds Zenodo's views and downloads (\code{zenodo_stats}) and the time they
+were downloaded (\code{zenodo_stats_date}). They grow daily without changing a record, so they
+are only as recent as the record's last download. First-time default \code{FALSE}.}
+
+\item{parquet_split}{How the files are split, for big sources (as \code{compact_parquet} in
+\code{openalexPro::pro_fetch()}): \code{"none"} (first-time default) one \code{data.parquet};
+\code{"year"}, \code{"quarter"} or \code{"month"} one file per period of the deposit's Zenodo creation
+date (\verb{2024.parquet}, \code{2024-Q1.parquet}, \verb{2024-03.parquet}); a number, e.g. \code{250000},
+files of about that many works (\code{part_0.parquet}, ...; approximate: DuckDB writes rows in
+groups of at least ~2,048, so small numbers give larger files). Links are split by the
+creation date of the deposit that declared them.}
 }
 \value{
-Invisibly, the paths of the corpus and link files.
+Invisibly, the corpus and link folders.
 }
 \description{
 \code{\link[=zenodo_fetch]{zenodo_fetch()}} runs this after each download, so it is only needed to rebuild with
-other \code{versions} or \code{stats}, or after updating the package, without downloading again.
-It maps the stored Zenodo records of \code{name} to the OpenAlex works schema and writes
+other \code{versions}, \code{stats} or \code{parquet_split}, or after updating the package, without
+downloading again. It maps the stored Zenodo records of \code{name} to the OpenAlex works schema
+and writes
 }
 \details{
 \itemize{
-\item \verb{<project_folder>/corpus/query=<name>/data.parquet}, with a copy of the source's
-\verb{_query.json} and \verb{_query.html}: one row per deposit (all versions
-of a Zenodo upload), from its newest version, \code{id} = \verb{zenodo:<concept record ID>};
-\item \verb{<project_folder>/links/query=<name>/data.parquet}: the links from Zenodo's related
-identifiers, shaped like OpenAlex's links (see \code{\link[=zenodo_links]{zenodo_links()}}).
+\item \verb{<project_folder>/corpus/query=<name>/}, with a copy of the source's \verb{_query.json} and
+\verb{_query.html}: one row per deposit (all versions of a Zenodo upload), from its newest
+version, \code{id} = \verb{zenodo:<concept record ID>};
+\item \verb{<project_folder>/links/query=<name>/}: the links from Zenodo's related identifiers,
+shaped like OpenAlex's links (see \code{\link[=zenodo_links]{zenodo_links()}}).
 }
+
+Each folder holds one \code{data.parquet}, or several files with \code{parquet_split}. A folder is
+replaced only when it is complete.
 
 Only Zenodo data is used; nothing is requested from OpenAlex. Fields Zenodo has no data
 for (\code{cited_by_count}, \code{topics}, ...) are absent.
@@ -56,4 +68,6 @@ columns: record and concept IDs and DOIs, version and all versions, resource typ
 publisher, licence, access, communities, related identifiers as declared, free-text
 references, files, and (as JSON text) contributors, locations, dates, additional
 descriptions, alternative identifiers and Software Heritage IDs.
+
+The settings are kept in \verb{raw/<name>/_query.json}; \code{NULL} means "as last time".
 }

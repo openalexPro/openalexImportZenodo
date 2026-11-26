@@ -1,7 +1,8 @@
-# The raw store: raw/<name>/<year>/*.parquet, one row per record (version), by year of
-# `created`, with the ID columns and the full hit as JSON. Storage does not depend on the
-# check interval: the check counts stored records per interval by `created`, so any interval
-# can be checked at any time; changed intervals are downloaded and merged into their years.
+# The raw store: raw/<name>/<part>/*.parquet, one row per record (version), with the ID
+# columns and the full hit as JSON. A part is a year of `created` (or a quarter / month,
+# `parquet_split`). Storage does not depend on the check interval: the check counts stored
+# records per interval by `created`, so any interval can be checked at any time; changed
+# intervals are downloaded and merged into their parts.
 # Started from zenodo-openalex-collection (fetch_zenodo_range.R, fetch_zenodo.R,
 # check_zenodo.R, zenodo_records.R, zenodo_id_table.R, zenodo_deposit.R); adapted:
 # InvenioRDM fields, `json` column, year folders with merge, state returned instead of written.
@@ -138,16 +139,65 @@ zenodo_duckdb <- function() {
 sql_str <- function(x) paste0("'", gsub("'", "''", x, fixed = TRUE), "'")
 sql_files <- function(files) sprintf("[%s]", paste(sql_str(files), collapse = ", "))
 
-# Stored parquet files by year folder (named list; empty if none).
-year_files <- function(dir) {
-  y <- grep("^[0-9]{4}$", list.dirs(dir, recursive = FALSE, full.names = FALSE), value = TRUE)
-  f <- lapply(stats::setNames(y, y), function(x) list.files(file.path(dir, x), "[.]parquet$", full.names = TRUE))
-  f[lengths(f) > 0]
+# ---- parquet_split ---------------------------------------------------------------------
+# "none", "year", "quarter", "month", or a number of rows per file (approximate).
+split_periods <- c("year", "quarter", "month")
+
+check_split <- function(x) {
+  ok <- is.null(x) || (is.character(x) && length(x) == 1 && x %in% c("none", split_periods)) ||
+    (is.numeric(x) && length(x) == 1 && !is.na(x) && x >= 1 && x == round(x))
+  if (!ok) {
+    stop("`parquet_split` must be \"none\", \"year\", \"quarter\", \"month\" or a number of ",
+         "works per file.", call. = FALSE)
+  }
+  x
 }
 
-# Stored records per year (for _query.html).
-zenodo_year_counts <- function(dir) {
-  f <- year_files(dir)
+# Period of the raw/ folders: the split period, else year.
+raw_period <- function(split) if (is.character(split) && split %in% split_periods) split else "year"
+
+# SQL: part label of a `created` column for a period ("2024", "2024-Q1", "2024-03").
+sql_label <- function(period, col = "created") {
+  switch(period,
+    year = sprintf("left(%s, 4)", col),
+    month = sprintf("left(%s, 7)", col),
+    quarter = sprintf("left(%1$s, 4) || '-Q' || CAST((CAST(substr(%1$s, 6, 2) AS INTEGER) - 1) // 3 + 1 AS VARCHAR)", col)
+  )
+}
+
+label_regex <- function(period) {
+  c(year = "^[0-9]{4}$", quarter = "^[0-9]{4}-Q[1-4]$", month = "^[0-9]{4}-[0-9]{2}$")[[period]]
+}
+
+# [from, to) of part labels.
+label_range <- function(labels, period) {
+  from <- zenodo_bucket_start(labels)
+  step <- c(year = "year", quarter = "3 months", month = "month")[[period]]
+  to <- vapply(from, function(f) as.character(seq(as.Date(f), by = step, length.out = 2)[2]), "")
+  data.frame(from = from, to = unname(to))
+}
+
+# COPY options for files of about `n` rows (row groups of <= 122,880 rows; DuckDB rounds them
+# to its vector size, so files are approximately, not exactly, `n` rows).
+sql_rows_per_file <- function(n) {
+  if (!is.numeric(n)) return("")
+  k <- ceiling(n / 122880)
+  sprintf(", ROW_GROUP_SIZE %d, ROW_GROUPS_PER_FILE %d", as.integer(ceiling(n / k)), as.integer(k))
+}
+
+# ---- stored parts ------------------------------------------------------------------------
+# Part folders of `dir` in the layout of `period`.
+stored_parts <- function(dir, period) {
+  grep(label_regex(period), list.dirs(dir, recursive = FALSE, full.names = FALSE), value = TRUE)
+}
+
+stored_files <- function(dir) list.files(dir, "[.]parquet$", recursive = TRUE, full.names = TRUE)
+
+# Stored records per part folder (for _query.html).
+zenodo_part_counts <- function(dir) {
+  p <- list.dirs(dir, recursive = FALSE, full.names = FALSE)
+  f <- lapply(stats::setNames(p, p), function(x) list.files(file.path(dir, x), "[.]parquet$", full.names = TRUE))
+  f <- f[lengths(f) > 0]
   vapply(f, function(x) nrow(arrow::open_dataset(x)), 1)
 }
 
@@ -162,7 +212,7 @@ sql_in_interval <- function(from, to) {
 # by `created`. This is what the update check compares with Zenodo; nothing is stored.
 stored_counts <- function(dir, b) {
   if (!nrow(b)) return(numeric())
-  files <- unlist(year_files(dir), use.names = FALSE)
+  files <- stored_files(dir)
   if (!length(files)) return(rep(0, nrow(b)))
   con <- zenodo_duckdb()
   on.exit(DBI::dbDisconnect(con, shutdown = TRUE))
@@ -218,13 +268,13 @@ check_zenodo <- function(cfg, dir, full = FALSE, recheck_last = NULL) {
   changed
 }
 
-# Downloads the intervals the check found changed and merges them into the year folders of
+# Downloads the intervals the check found changed and merges them into the part folders of
 # `dir`. Consecutive changed intervals with fewer than 10,000 records together are downloaded
 # in one query; the counts from the check are reused, so no extra count requests are needed.
-# Everything is downloaded into a temporary folder first; only then are the years replaced.
+# Everything is downloaded into a temporary folder first; only then are the parts replaced.
 # `full`: all stored records are replaced. Returns the last change (added / removed deposits
 # and records), or NULL if nothing changed.
-fetch_zenodo <- function(cfg, changed, dir, full = FALSE, limit = 10000) {
+fetch_zenodo <- function(cfg, changed, dir, full = FALSE, split = "none", limit = 10000) {
   dir.create(dir, recursive = TRUE, showWarnings = FALSE)
   if (!nrow(changed)) return(NULL)
   ids <- c("id", "conceptdoi", "doi")
@@ -252,7 +302,7 @@ fetch_zenodo <- function(cfg, changed, dir, full = FALSE, limit = 10000) {
     paste0("(", vapply(seq_len(nrow(changed)), function(i) sql_in_interval(changed$from[i], changed$to[i]), ""),
            ")", collapse = " OR ")
   }
-  zenodo_merge(dir, tmp_root, drop, if (!full) changed)
+  zenodo_merge(dir, tmp_root, drop, if (!full) changed, split)
 
   after <- zenodo_id_table(dir, ids)
   if (anyDuplicated(after$id)) stop("Duplicate records in ", dir, "; run with `full = TRUE`.", call. = FALSE)
@@ -268,55 +318,56 @@ fetch_zenodo <- function(cfg, changed, dir, full = FALSE, limit = 10000) {
   )
 }
 
-# Merges the records downloaded below `tmp_root` into the year folders of `dir`: each year is
+# Merges the records downloaded below `tmp_root` into the part folders of `dir`: each part is
 # rewritten with its stored records except those matching `drop` (SQL), plus the downloaded
-# records of that year. Years touched: those of the downloaded records, and the stored years
-# overlapping `intervals` (data frame with from, to), or all stored years if `intervals` is
-# NULL and `drop` is "TRUE". Each year folder is replaced atomically; a run that stops between
-# two years leaves counts that differ from Zenodo, which the next check repairs.
-zenodo_merge <- function(dir, tmp_root, drop, intervals = NULL) {
-  old <- year_files(dir)
+# records of that part. Parts touched: those of the downloaded records, and the stored parts
+# overlapping `intervals` (data frame with from, to), or all stored parts if `intervals` is
+# NULL and `drop` is "TRUE". One pass over the data (COPY ... PARTITION_BY); each part folder
+# is then replaced; a run that stops between two parts leaves counts that differ from Zenodo,
+# which the next check repairs.
+zenodo_merge <- function(dir, tmp_root, drop, intervals = NULL, split = "none") {
+  period <- raw_period(split)
+  label <- sql_label(period)
+  old <- stored_parts(dir, period)
   new <- list.files(tmp_root, "[.]parquet$", recursive = TRUE, full.names = TRUE)
-  new <- new[!startsWith(new, file.path(tmp_root, "merged"))]
+  out_root <- file.path(tmp_root, "merged")
+  new <- new[!startsWith(new, out_root)]
+  dir.create(tmp_root, recursive = TRUE, showWarnings = FALSE)
   con <- zenodo_duckdb()
   on.exit(DBI::dbDisconnect(con, shutdown = TRUE))
-  new_years <- if (length(new)) {
-    DBI::dbGetQuery(con, sprintf("SELECT DISTINCT left(created, 4) AS y FROM read_parquet(%s)", sql_files(new)))$y
+  new_parts <- if (length(new)) {
+    DBI::dbGetQuery(con, sprintf("SELECT DISTINCT %s AS p FROM read_parquet(%s)", label, sql_files(new)))$p
   } else character()
-  touched <- if (!is.null(intervals)) {
-    names(old)[vapply(names(old), function(y) {
-      lo <- sprintf("%s-01-01", y)
-      hi <- sprintf("%d-01-01", as.integer(y) + 1L)
-      any((is.na(intervals$to) | intervals$to > lo) & (is.na(intervals$from) | intervals$from < hi))
+  touched <- if (!is.null(intervals) && length(old)) {
+    r <- label_range(old, period)
+    old[vapply(seq_along(old), function(i) {
+      any((is.na(intervals$to) | intervals$to > r$from[i]) & (is.na(intervals$from) | intervals$from < r$to[i]))
     }, NA)]
-  } else if (identical(drop, "TRUE")) names(old) else character()
-  years <- sort(union(touched, new_years))
-  out_root <- file.path(tmp_root, "merged")
-  rows <- integer()
-  for (y in years) {
-    parts <- c(
-      if (!is.null(old[[y]])) sprintf("SELECT * FROM read_parquet(%s, union_by_name = true) WHERE NOT (%s)",
-                                      sql_files(old[[y]]), drop),
-      if (y %in% new_years) sprintf("SELECT * FROM read_parquet(%s, union_by_name = true) WHERE left(created, 4) = %s",
-                                    sql_files(new), sql_str(y))
-    )
-    out <- file.path(out_root, y, "data_001.parquet")
-    dir.create(dirname(out), recursive = TRUE, showWarnings = FALSE)
-    rows[y] <- DBI::dbExecute(con, sprintf(
-      "COPY (SELECT * FROM (%s) ORDER BY created) TO %s (FORMAT parquet, COMPRESSION zstd)",
-      paste(parts, collapse = " UNION ALL BY NAME "), sql_str(out)))
+  } else if (identical(drop, "TRUE")) old else character()
+  parts <- sort(union(touched, new_parts))
+  if (!length(parts)) return(invisible(character()))
+  old_files <- unlist(lapply(file.path(dir, touched), list.files, pattern = "[.]parquet$", full.names = TRUE))
+  sel <- c(
+    if (length(old_files)) sprintf("SELECT * FROM read_parquet(%s, union_by_name = true) WHERE NOT (%s)",
+                                   sql_files(old_files), drop),
+    if (length(new)) sprintf("SELECT * FROM read_parquet(%s, union_by_name = true)", sql_files(new))
+  )
+  DBI::dbExecute(con, sprintf(
+    "COPY (SELECT *, %s AS zenodo_part FROM (%s) ORDER BY created) TO %s
+     (FORMAT parquet, COMPRESSION zstd, PARTITION_BY (zenodo_part), WRITE_PARTITION_COLUMNS false%s)",
+    label, paste(sel, collapse = " UNION ALL BY NAME "), sql_str(out_root), sql_rows_per_file(split)))
+  for (p in parts) {
+    unlink(file.path(dir, p), recursive = TRUE)
+    src <- file.path(out_root, paste0("zenodo_part=", p))
+    if (dir.exists(src)) file.rename(src, file.path(dir, p))
   }
-  for (y in years) {
-    unlink(file.path(dir, y), recursive = TRUE)
-    if (rows[[y]] > 0) file.rename(file.path(out_root, y), file.path(dir, y))
-  }
-  invisible(rows)
+  invisible(parts)
 }
 
 # Metadata edits do not change the counts: records of the source updated since `since`
 # replace their stored copies (merged into the year of their `created`). More than 10,000
 # edits are split by creation date like any download. Returns the number of records replaced.
-zenodo_upsert_updated <- function(cfg, dir, since) {
+zenodo_upsert_updated <- function(cfg, dir, since, split = "none") {
   tmp_root <- paste0(dir, ".upd")
   unlink(tmp_root, recursive = TRUE)
   on.exit(unlink(tmp_root, recursive = TRUE))
@@ -325,18 +376,19 @@ zenodo_upsert_updated <- function(cfg, dir, since) {
   n <- fetch_zenodo_range(cfg, d, cfg$from, cfg$to, extra = sprintf('updated:["%s" TO *]', since))
   if (!n) return(0)
   new <- list.files(d, "[.]parquet$", full.names = TRUE)
-  zenodo_merge(dir, tmp_root, sprintf("id IN (SELECT id FROM read_parquet(%s))", sql_files(new)))
+  zenodo_merge(dir, tmp_root, sprintf("id IN (SELECT id FROM read_parquet(%s))", sql_files(new)), split = split)
   message(n, " record(s) edited since ", since, " replaced")
   n
 }
 
-# Downloads made with the earlier layout (one folder per check interval, e.g. 2024-03/,
-# 2024-W05/, all/) are rewritten as year folders, locally. Year folders (also those of the
-# earlier interval "year") are already in the current layout.
-zenodo_convert_layout <- function(dir) {
+# Downloads stored in another layout (an earlier one with one folder per check interval, e.g.
+# 2024-W05/, all/, or another `parquet_split` period) are rewritten in the layout of `split`,
+# locally.
+zenodo_convert_layout <- function(dir, split = "none") {
+  period <- raw_period(split)
   sub <- list.dirs(dir, recursive = FALSE, full.names = FALSE)
-  old <- sub[!grepl("^[0-9]{4}$", sub)]
-  if (!length(old)) return(invisible(FALSE))
+  other <- sub[!grepl(label_regex(period), sub)]
+  if (!length(other)) return(invisible(FALSE))
   files <- list.files(file.path(dir, sub), "[.]parquet$", full.names = TRUE)
   tmp_root <- paste0(dir, ".convert")
   unlink(tmp_root, recursive = TRUE)
@@ -344,8 +396,8 @@ zenodo_convert_layout <- function(dir) {
   d <- file.path(tmp_root, "run1")
   dir.create(d, recursive = TRUE)
   file.copy(files, file.path(d, paste0(seq_along(files), ".parquet")))
-  zenodo_merge(dir, tmp_root, "TRUE") # no year folders yet: writes them from the copies
-  unlink(file.path(dir, old), recursive = TRUE)
-  message("Converted ", dir, " to one folder per year of `created`.")
+  zenodo_merge(dir, tmp_root, "TRUE", split = split) # rewrites the parts of `period` from the copies
+  unlink(file.path(dir, other), recursive = TRUE)
+  message("Converted ", dir, " to one folder per ", period, " of `created`.")
   invisible(TRUE)
 }

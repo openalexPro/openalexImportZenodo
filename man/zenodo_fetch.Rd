@@ -20,7 +20,8 @@ zenodo_fetch(
   name = "zenodo",
   full = FALSE,
   versions = NULL,
-  stats = NULL
+  stats = NULL,
+  parquet_split = NULL
 )
 }
 \arguments{
@@ -58,8 +59,10 @@ not download time.}
 
 \item{full}{Download everything again; also needed to change the arguments of \code{name}.}
 
-\item{versions, stats}{As in \code{\link[=zenodo_build]{zenodo_build()}}; \code{NULL}: as last time (first time
-\code{"latest"}, \code{FALSE}).}
+\item{versions, stats, parquet_split}{As in \code{\link[=zenodo_build]{zenodo_build()}}; \code{NULL}: as last time (first
+time \code{"latest"}, \code{FALSE}, \code{"none"}). \code{parquet_split} also sets how \verb{raw/} is split: one
+folder per period (\code{"year"}, \code{"quarter"}, \code{"month"}) of each record's creation date, else
+one folder per year (with files of about that many records for a number).}
 }
 \value{
 Invisibly, the paths of the corpus and link files (as \code{\link[=zenodo_build]{zenodo_build()}}).

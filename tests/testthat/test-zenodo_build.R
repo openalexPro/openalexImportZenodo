@@ -63,13 +63,17 @@ test_that("zenodo_fetch() returns the built files; zenodo_build() rebuilds with 
   pf <- local_project()
   out <- quiet(zenodo_fetch(community = "c", project_folder = pf))
   expect_named(out, c("corpus", "links"))
-  expect_true(all(file.exists(out)))
-  expect_setequal(list.files(dirname(out[["corpus"]])), c("data.parquet", "_query.json", "_query.html"))
-  expect_identical(readLines(file.path(dirname(out[["corpus"]]), "_query.json")),
+  expect_true(all(dir.exists(out)))
+  expect_setequal(list.files(out[["corpus"]]), c("data.parquet", "_query.json", "_query.html"))
+  expect_identical(readLines(file.path(out[["corpus"]], "_query.json")),
                    readLines(file.path(pf, "raw", "zenodo", "_query.json")))
-  expect_equal(nrow(arrow::read_parquet(out[["corpus"]])), 1)
+  expect_equal(nrow(arrow::read_parquet(file.path(out[["corpus"]], "data.parquet"))), 1)
   quiet(zenodo_build(pf, versions = "all"))
-  expect_equal(nrow(arrow::read_parquet(out[["corpus"]])), 2)
+  expect_equal(nrow(arrow::read_parquet(file.path(out[["corpus"]], "data.parquet"))), 2)
+  # the setting is kept: the next fetch builds with versions = "all" too
+  expect_equal(jsonlite::read_json(file.path(pf, "raw", "zenodo", "_query.json"))$build$versions, "all")
+  quiet(zenodo_fetch(community = "c", project_folder = pf))
+  expect_equal(nrow(arrow::read_parquet(file.path(out[["corpus"]], "data.parquet"))), 2)
 })
 
 test_that("no records, no corpus", {
@@ -80,4 +84,42 @@ test_that("no records, no corpus", {
   z$hits <- list()
   expect_null(quiet(zenodo_fetch(community = "c", project_folder = pf)))
   expect_false(dir.exists(file.path(pf, "corpus", "query=zenodo")))
+})
+
+test_that("parquet_split splits corpus, links and raw/ by period of the creation date", {
+  hits <- list(
+    hit(11, 10, created = "2024-01-10T10:00:00+00:00", index = 1L, latest = FALSE,
+        related = list(rel("10.5281/zenodo.21", "cites"))),
+    hit(12, 10, created = "2024-05-10T10:00:00+00:00", index = 2L), # new version: stays in 2024-Q1
+    hit(21, 20, created = "2024-04-02T10:00:00+00:00"),
+    hit(31, 30, created = "2025-02-01T10:00:00+00:00")
+  )
+  local_fake_zenodo(hits)
+  pf <- local_project()
+  out <- quiet(zenodo_fetch(community = "c", parquet_split = "quarter", project_folder = pf))
+  expect_setequal(list.files(out[["corpus"]], "parquet$"), c("2024-Q1.parquet", "2024-Q2.parquet", "2025-Q1.parquet"))
+  expect_equal(arrow::read_parquet(file.path(out[["corpus"]], "2024-Q1.parquet"))$id, "zenodo:10")
+  expect_equal(list.files(out[["links"]], "parquet$"), "2024-Q1.parquet") # declared by deposit 10
+  expect_setequal(list.files(file.path(pf, "raw", "zenodo")),
+                  c("2024-Q1", "2024-Q2", "2025-Q1", "_query.json", "_query.html"))
+  expect_equal(nrow(arrow::open_dataset(out[["corpus"]])), 3)
+  expect_equal(nrow(zenodo_links(pf)), 1)
+
+  # another split: raw/ is rewritten locally, without downloading
+  expect_message(zenodo_fetch(community = "c", parquet_split = "year", project_folder = pf), "Converted")
+  expect_setequal(list.files(out[["corpus"]], "parquet$"), c("2024.parquet", "2025.parquet"))
+  expect_equal(names(zenodo_part_counts(file.path(pf, "raw", "zenodo"))), c("2024", "2025"))
+  expect_equal(sort(zenodo_id_table(file.path(pf, "raw", "zenodo"))$id), c("11", "12", "21", "31"))
+})
+
+test_that("parquet_split as a number gives files of about that many works", {
+  hits <- lapply(1:30, function(i) hit(i, created = sprintf("2024-01-%02dT10:00:00+00:00", i)))
+  local_fake_zenodo(hits)
+  pf <- local_project()
+  out <- quiet(zenodo_fetch(community = "c", parquet_split = 10, project_folder = pf))
+  f <- list.files(out[["corpus"]], "parquet$", full.names = TRUE)
+  expect_true(all(grepl("^part_[0-9]+\\.parquet$", basename(f))))
+  expect_equal(sum(vapply(f, function(x) nrow(arrow::read_parquet(x)), 1)), 30)
+  expect_equal(list.files(file.path(pf, "raw", "zenodo"), "^[0-9]"), "2024") # raw/: years
+  expect_error(zenodo_fetch(community = "c", parquet_split = "week", project_folder = pf), "parquet_split")
 })

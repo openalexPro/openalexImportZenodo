@@ -1,14 +1,18 @@
 #' Build the works corpus and the link table of a source
 #'
 #' [zenodo_fetch()] runs this after each download, so it is only needed to rebuild with
-#' other `versions` or `stats`, or after updating the package, without downloading again.
-#' It maps the stored Zenodo records of `name` to the OpenAlex works schema and writes
+#' other `versions`, `stats` or `parquet_split`, or after updating the package, without
+#' downloading again. It maps the stored Zenodo records of `name` to the OpenAlex works schema
+#' and writes
 #'
-#' - `<project_folder>/corpus/query=<name>/data.parquet`, with a copy of the source's
-#'   `_query.json` and `_query.html`: one row per deposit (all versions
-#'   of a Zenodo upload), from its newest version, `id` = `zenodo:<concept record ID>`;
-#' - `<project_folder>/links/query=<name>/data.parquet`: the links from Zenodo's related
-#'   identifiers, shaped like OpenAlex's links (see [zenodo_links()]).
+#' - `<project_folder>/corpus/query=<name>/`, with a copy of the source's `_query.json` and
+#'   `_query.html`: one row per deposit (all versions of a Zenodo upload), from its newest
+#'   version, `id` = `zenodo:<concept record ID>`;
+#' - `<project_folder>/links/query=<name>/`: the links from Zenodo's related identifiers,
+#'   shaped like OpenAlex's links (see [zenodo_links()]).
+#'
+#' Each folder holds one `data.parquet`, or several files with `parquet_split`. A folder is
+#' replaced only when it is complete.
 #'
 #' Only Zenodo data is used; nothing is requested from OpenAlex. Fields Zenodo has no data
 #' for (`cited_by_count`, `topics`, ...) are absent.
@@ -25,26 +29,44 @@
 #' references, files, and (as JSON text) contributors, locations, dates, additional
 #' descriptions, alternative identifiers and Software Heritage IDs.
 #'
+#' The settings are kept in `raw/<name>/_query.json`; `NULL` means "as last time".
+#'
 #' @param project_folder Project folder.
 #' @param name Name of the source.
-#' @param versions `"latest"` (default): one row per deposit, from its newest version;
-#'   `"all"`: one row per version, `id` = `zenodo:<record ID>`. Links are always between
-#'   deposits.
-#' @param stats Add Zenodo's views and downloads (`zenodo_stats`) and the time they were
-#'   downloaded (`zenodo_stats_date`). They grow daily without changing a record, so they
-#'   are only as recent as the record's last download. Needs `stats` stored (the default
-#'   of [zenodo_fetch()]).
+#' @param versions `"latest"` (first-time default): one row per deposit, from its newest
+#'   version; `"all"`: one row per version, `id` = `zenodo:<record ID>`. Links are always
+#'   between deposits.
+#' @param stats `TRUE` adds Zenodo's views and downloads (`zenodo_stats`) and the time they
+#'   were downloaded (`zenodo_stats_date`). They grow daily without changing a record, so they
+#'   are only as recent as the record's last download. First-time default `FALSE`.
+#' @param parquet_split How the files are split, for big sources (as `compact_parquet` in
+#'   `openalexPro::pro_fetch()`): `"none"` (first-time default) one `data.parquet`;
+#'   `"year"`, `"quarter"` or `"month"` one file per period of the deposit's Zenodo creation
+#'   date (`2024.parquet`, `2024-Q1.parquet`, `2024-03.parquet`); a number, e.g. `250000`,
+#'   files of about that many works (`part_0.parquet`, ...; approximate: DuckDB writes rows in
+#'   groups of at least ~2,048, so small numbers give larger files). Links are split by the
+#'   creation date of the deposit that declared them.
 #'
-#' @return Invisibly, the paths of the corpus and link files.
+#' @return Invisibly, the corpus and link folders.
 #' @export
-zenodo_build <- function(project_folder, name = "zenodo", versions = c("latest", "all"),
-                         stats = FALSE) {
+zenodo_build <- function(project_folder, name = "zenodo", versions = NULL, stats = NULL,
+                         parquet_split = NULL) {
   check_name(name)
-  versions <- match.arg(versions)
   raw <- file.path(project_folder, "raw", name)
-  if (!length(list.files(raw, "[.]parquet$", recursive = TRUE))) {
+  if (!length(stored_files(raw))) {
     stop("No records for `", name, "` in ", raw, "; run zenodo_fetch() first.", call. = FALSE)
   }
+  rec_file <- file.path(raw, "_query.json")
+  rec <- if (file.exists(rec_file)) jsonlite::read_json(rec_file, simplifyVector = TRUE)
+  versions <- match.arg(versions %||% rec$build$versions %||% "latest", c("latest", "all"))
+  stats <- isTRUE(stats %||% rec$build$stats)
+  split <- check_split(parquet_split %||% rec$build$parquet_split %||% "none")
+  build <- list(versions = versions, stats = stats, parquet_split = split)
+  if (!is.null(rec) && !identical(rec$build, build)) {
+    rec$build <- build
+    write_query_record(rec, raw)
+  }
+
   con <- zenodo_duckdb()
   on.exit(DBI::dbDisconnect(con, shutdown = TRUE))
   for (t in c("languages", "resource_types", "relations")) {
@@ -52,34 +74,63 @@ zenodo_build <- function(project_folder, name = "zenodo", versions = c("latest",
                          stringsAsFactors = FALSE, na.strings = "")
     duckdb::duckdb_register(con, t, d)
   }
-  q <- function(x) as.character(DBI::dbQuoteString(con, x))
   DBI::dbExecute(con, sprintf(
     "CREATE TEMP TABLE r AS SELECT *, json_transform(json, %s) AS j
-     FROM read_parquet(%s, hive_partitioning = false)",
-    q(build_schema()), q(file.path(raw, "*", "*.parquet"))))
+     FROM read_parquet(%s, hive_partitioning = false, union_by_name = true)",
+    sql_str(build_schema()), sql_files(stored_files(raw))))
   build_links(con)
+  # the deposit's Zenodo creation date (first version): decides its file with a period split
+  DBI::dbExecute(con, "CREATE TEMP TABLE fc AS SELECT conceptrecid, min(created) AS first_created FROM r GROUP BY ALL")
 
-  corpus <- file.path(project_folder, "corpus", paste0("query=", name), "data.parquet")
-  links <- file.path(project_folder, "links", paste0("query=", name), "data.parquet")
-  write_parquet_sql(con, build_works_sql(name, versions, stats), corpus)
-  write_parquet_sql(con, "SELECT * EXCLUDE (dep, rank) FROM links ORDER BY origin, target, relation", links)
-  # the query record next to the data, as pro_fetch() does (`_` files are skipped by arrow
-  # and openalexAPI)
-  rec <- file.path(raw, c("_query.json", "_query.html"))
-  file.copy(rec[file.exists(rec)], dirname(corpus), overwrite = TRUE)
-  message(DBI::dbGetQuery(con, "SELECT count(DISTINCT conceptrecid) AS n FROM r")$n,
-          " deposits -> ", corpus)
+  part <- if (split %in% split_periods) sql_label(split, "fc.first_created") else "NULL"
+  corpus <- file.path(project_folder, "corpus", paste0("query=", name))
+  links <- file.path(project_folder, "links", paste0("query=", name))
+  write_split(con, sprintf(
+    "SELECT w.*, %s AS zenodo_part FROM (%s) w JOIN fc ON fc.conceptrecid = w.zenodo_conceptrecid",
+    part, build_works_sql(name, versions, stats)), corpus, split, "id",
+    extra = file.path(raw, c("_query.json", "_query.html")))
+  write_split(con, sprintf(
+    "SELECT l.* EXCLUDE (dep, rank), %s AS zenodo_part FROM links l JOIN fc ON fc.conceptrecid = l.dep",
+    part), links, split, "origin, target, relation")
+  message(DBI::dbGetQuery(con, "SELECT count(*) AS n FROM fc")$n, " deposits -> ", corpus)
   invisible(c(corpus = corpus, links = links))
 }
 
-# COPY a query to a parquet file, replacing it only when complete.
-write_parquet_sql <- function(con, sql, file) {
-  dir.create(dirname(file), recursive = TRUE, showWarnings = FALSE)
-  tmp <- paste0(file, ".part")
-  DBI::dbExecute(con, sprintf("COPY (%s) TO %s (FORMAT parquet, COMPRESSION zstd)", sql,
-                              DBI::dbQuoteString(con, tmp)))
-  if (!file.rename(tmp, file)) stop("Could not write ", file, call. = FALSE)
-  file
+# Writes the rows of `sql` (with a column `zenodo_part`, dropped) to the folder `out` as one
+# data.parquet, one file per part (`split` a period), or files of about `split` rows.
+# Written to `<out>.tmp` and swapped in only when complete. `extra` files are copied along.
+write_split <- function(con, sql, out, split, order, extra = character()) {
+  tmp <- paste0(out, ".tmp")
+  unlink(tmp, recursive = TRUE)
+  dir.create(dirname(out), recursive = TRUE, showWarnings = FALSE)
+  sel <- sprintf("SELECT * EXCLUDE (zenodo_part) FROM (%s) ORDER BY %s", sql, order)
+  opts <- "FORMAT parquet, COMPRESSION zstd"
+  if (identical(split, "none")) {
+    dir.create(tmp)
+    DBI::dbExecute(con, sprintf("COPY (%s) TO %s (%s)", sel, sql_str(file.path(tmp, "data.parquet")), opts))
+  } else if (is.numeric(split)) {
+    DBI::dbExecute(con, sprintf("COPY (%s) TO %s (%s, FILENAME_PATTERN 'part_{i}'%s)", sel, sql_str(tmp),
+                                opts, sql_rows_per_file(split)))
+  } else {
+    parts <- file.path(tmp, "parts")
+    dir.create(tmp)
+    DBI::dbExecute(con, sprintf(
+      "COPY (SELECT * FROM (%s) ORDER BY %s) TO %s (%s, PARTITION_BY (zenodo_part), WRITE_PARTITION_COLUMNS false)",
+      sql, order, sql_str(parts), opts))
+    for (d in list.dirs(parts, recursive = FALSE)) {
+      f <- list.files(d, "[.]parquet$", full.names = TRUE)
+      lab <- sub("^zenodo_part=", "", basename(d))
+      to <- if (length(f) == 1) paste0(lab, ".parquet") else sprintf("%s_%d.parquet", lab, seq_along(f))
+      file.rename(f, file.path(tmp, to))
+    }
+    unlink(parts, recursive = TRUE)
+  }
+  if (!dir.exists(tmp)) dir.create(tmp) # no rows
+  extra <- extra[file.exists(extra)]
+  file.copy(extra, tmp, overwrite = TRUE)
+  unlink(out, recursive = TRUE)
+  if (!file.rename(tmp, out)) stop("Could not write ", out, call. = FALSE)
+  out
 }
 
 # The parts of a record that are mapped, as a json_transform() structure. Missing parts

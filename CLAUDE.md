@@ -10,7 +10,7 @@ Second member of the `openalexImport<Source>` family. Design: `APPROACH.md`.
 ## Data flow
 
 ```
-zenodo_fetch()  -> <project_folder>/raw/<name>/<year>/*.parquet       (all versions by year of `created`; id columns + full hit as `json`)
+zenodo_fetch()  -> <project_folder>/raw/<name>/<part>/*.parquet       (all versions by year (or parquet_split period) of `created`; id columns + full hit as `json`)
                    raw/<name>/_query.json, _query.html                (arguments, last run, watermark)
 zenodo_build()  -> corpus/query=<name>/data.parquet                   (one row per deposit; + copies of _query.json/.html)
                    links/query=<name>/data.parquet                    (origin, target, link_type, ...)
@@ -23,7 +23,7 @@ zenodo_update() =  zenodo_fetch() with the stored arguments (incl. versions / st
 | `R/api.R` | `zenodo_get()` (InvenioRDM `Accept` header, throttle 2.2 s, 429 handling), token `API_zenodo_ro` |
 | `R/intervals.R` | interval maths, copied unchanged from zenodo-openalex-collection |
 | `R/source.R` | argument validation (`zenodo_source()`), query strings, URLs, ID resolution |
-| `R/raw.R` | count check (stored counts by `created`, any interval), range download with bisection, merge into year folders, `updated` upsert, conversion of the earlier layout |
+| `R/raw.R` | count check (stored counts by `created`, any interval), range download with bisection, merge into part folders (year, or `parquet_split` period) in one partitioned COPY, `updated` upsert, layout conversion |
 | `R/fetch.R` | `zenodo_fetch()`, `_query.json` / `_query.html` |
 | `R/build.R` | `zenodo_build()`: DuckDB `json_transform()` + SQL mapping |
 | `R/links.R` | link table (`build_links()`), `zenodo_links()` |

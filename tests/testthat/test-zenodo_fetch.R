@@ -10,7 +10,7 @@ test_that("first download stores records per year and the query record", {
   quiet(zenodo_fetch(community = "c", from = "2023-01-01", to = "2025-01-01", project_folder = pf))
   dir <- file.path(pf, "raw", "zenodo")
   expect_setequal(list.files(dir), c("2023", "2024", "_query.json", "_query.html"))
-  expect_equal(zenodo_year_counts(dir), c(`2023` = 1, `2024` = 2))
+  expect_equal(zenodo_part_counts(dir), c(`2023` = 1, `2024` = 2))
   rec <- jsonlite::read_json(file.path(dir, "_query.json"))
   expect_equal(rec$records, 3)
   expect_equal(rec$deposits, 2)
@@ -58,7 +58,7 @@ test_that("another query for the same name needs full = TRUE", {
   quiet(zenodo_fetch(community = "c", from = "2024-01-01", project_folder = pf, full = TRUE))
   dir <- file.path(pf, "raw", "zenodo")
   expect_equal(sort(zenodo_id_table(dir)$id), c("12", "21")) # 11 (2023) is outside now
-  expect_equal(names(zenodo_year_counts(dir)), "2024")
+  expect_equal(names(zenodo_part_counts(dir)), "2024")
 })
 
 test_that("the check interval can change in every call, without downloading", {
@@ -69,12 +69,12 @@ test_that("the check interval can change in every call, without downloading", {
                               project_folder = pf), "106 intervals checked \\(week\\).*0 to download")
   dir <- file.path(pf, "raw", "zenodo")
   expect_equal(jsonlite::read_json(file.path(dir, "_query.json"))$source$interval, "week")
-  expect_equal(names(zenodo_year_counts(dir)), c("2023", "2024")) # storage unchanged
+  expect_equal(names(zenodo_part_counts(dir)), c("2023", "2024")) # storage unchanged
   # without `interval`: as last time; a change is downloaded by its week only
   z$hits <- c(z$hits, list(hit(31, created = "2024-06-03T10:00:00+00:00")))
   expect_message(zenodo_fetch(community = "c", from = "2023-01-01", to = "2025-01-01", project_folder = pf),
                  "1 to download: 2024-W23 \\(0 -> 1\\)")
-  expect_equal(zenodo_year_counts(dir), c(`2023` = 1, `2024` = 3))
+  expect_equal(zenodo_part_counts(dir), c(`2023` = 1, `2024` = 3))
   rec <- jsonlite::read_json(file.path(dir, "_query.json"))
   expect_equal(unlist(rec$check$changed), "2024-W23")
 })
@@ -86,11 +86,11 @@ test_that("a week across New Year is merged into both years", {
   pf <- local_project()
   quiet(zenodo_fetch(community = "c", interval = "week", project_folder = pf))
   dir <- file.path(pf, "raw", "zenodo")
-  expect_equal(zenodo_year_counts(dir), c(`2024` = 1, `2025` = 2))
+  expect_equal(zenodo_part_counts(dir), c(`2024` = 1, `2025` = 2))
   z$hits <- c(z$hits[-1], list(hit(4, created = "2024-12-30T10:00:00+00:00"),
                                hit(5, created = "2025-01-01T10:00:00+00:00")))
   expect_message(zenodo_fetch(community = "c", project_folder = pf), "1 to download: 2025-W01 \\(2 -> 3\\)")
-  expect_equal(zenodo_year_counts(dir), c(`2024` = 1, `2025` = 3))
+  expect_equal(zenodo_part_counts(dir), c(`2024` = 1, `2025` = 3))
   expect_setequal(zenodo_id_table(dir)$id, c("2", "3", "4", "5"))
 })
 
@@ -132,7 +132,7 @@ test_that("downloads in the earlier layout (folder per interval) are converted",
     arrow::write_parquet(zenodo_records(h), file.path(dir, b, "x_001.parquet"))
   }
   expect_message(zenodo_fetch(community = "c", project_folder = pf), "Converted")
-  expect_equal(zenodo_year_counts(dir), c(`2023` = 1, `2024` = 2))
+  expect_equal(zenodo_part_counts(dir), c(`2023` = 1, `2024` = 2))
   expect_false(any(dir.exists(file.path(dir, c("2023-05", "2024-02", "2024-06")))))
 })
 

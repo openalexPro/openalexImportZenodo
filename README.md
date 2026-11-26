@@ -85,6 +85,18 @@ The interval can be different in every call, without downloading again: e.g. `"w
 active source, `"month"` with a weekly rolling recheck for a big one, `"year"` for an old
 date range.
 
+## Big sources: `parquet_split`
+
+`parquet_split` (like `compact_parquet` in `openalexPro::pro_fetch()`) splits the files:
+`"year"`, `"quarter"` or `"month"` gives one corpus file per period of the deposit's Zenodo
+creation date (and one `raw/` folder per period, so an update rewrites less); a number, e.g.
+`250000`, gives files of about that many works. Default `"none"`: one `data.parquet`.
+
+```r
+zenodo_fetch(community = "big-community", project_folder = "big", interval = "month",
+             parquet_split = "month")
+```
+
 The design, the field mapping and the decisions behind them are in
 [APPROACH.md](APPROACH.md).
 
