@@ -143,8 +143,9 @@ A changed interval is downloaded into a temporary folder and **merged**: each ye
 interval touches is rewritten with its stored records outside the interval plus the new ones
 (an interval across New Year touches two). For a big source a changed week thus rewrites one
 year locally (seconds to tens of seconds), small next to the download at 2.2 s per request.
-Each year folder is replaced atomically; a run that stops between two years leaves counts that
-differ from Zenodo, and the next run repairs them.
+Each year folder is replaced atomically, and each run of intervals is merged right after its
+download (§6); a run that stops leaves counts that differ from Zenodo, and the next run
+repairs them.
 
 **`parquet_split`** (argument of `zenodo_fetch()` / `zenodo_build()`, decided 2026-11-26; the
 counterpart of `pro_fetch(compact_parquet = )`): how the files are split, for big sources.
@@ -224,10 +225,18 @@ updated in July/August 2024), so popular records are not re-downloaded every run
 verify: that removing a record from a community bumps `updated` (if not, the count check
 catches it anyway).
 
-Rules: everything is downloaded before anything is replaced; year folders are replaced
-atomically (temp folder, then rename); a failed run leaves the old watermark; the watermark
-only advances after a successful run; a full re-download stays a manual switch
-(`full = TRUE`).
+Rules: each **run** of changed intervals (consecutive intervals of fewer than 10,000 records
+together, or one bigger interval) is merged as soon as it is downloaded, so an interrupted
+download keeps what it has: called again, the count check finds those intervals unchanged and
+downloads only the rest (decided 2026-11-26, for the first download of a 2.5-million-record
+community: ~24,000 requests, ~15 hours). What is lost is the run in progress; a finer
+`interval` makes runs smaller. Intervals that are now empty on Zenodo are dropped at the end.
+Part folders are replaced atomically (temp folder, then rename). The first download writes
+`_query.json` (arguments and the run's start as watermark) before downloading, so a rerun
+with other arguments is refused and edits made while the download was interrupted are picked
+up by the watermark. A failed run leaves the old watermark; the watermark only advances after
+a successful run. An interrupted `full = TRUE` run must be repeated with `full = TRUE` (the
+old arguments stay stored until it finishes). A full re-download stays a manual switch.
 
 Update of the corpus: `zenodo_fetch()` rebuilds the source's corpus and link table after
 every run, like `pro_fetch()` leaves a usable dataset. Mapping in DuckDB is seconds for a few
