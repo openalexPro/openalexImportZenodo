@@ -243,6 +243,15 @@ every run, like `pro_fetch()` leaves a usable dataset. Mapping in DuckDB is seco
 thousand records; incremental row-level writes are not worth it until a big source shows
 otherwise.
 
+The build must not hold the whole source in memory (decided 2026-11-26: a 2.4-million-record
+community is ~40 GB of JSON, more than the RAM of the machine it runs on). It reads the stored
+records twice: once only the small fields (IDs, version, publication date, related
+identifiers) for the version lists, the choice of the newest version and the link table; then
+the full records of the chosen versions in batches of 50,000 by `created`, each mapped and
+written to a temporary file, which are then split into the corpus files. Memory is one batch
+plus the small fields. Works are ordered by `id` within a batch, batches by `created`.
+Rebuilding only changed parts is left until a full rebuild proves too slow.
+
 ---
 
 ## 7. Identity, and OpenAlex as a separate later step
