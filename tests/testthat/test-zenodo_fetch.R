@@ -168,3 +168,27 @@ test_that("select stores only the given parts", {
 test_that("bad names are refused", {
   expect_error(zenodo_fetch(community = "c", project_folder = tempdir(), name = "a/b"), "one word")
 })
+
+test_that("an interrupted first download keeps what it has and resumes", {
+  z <- local_fake_zenodo(list(
+    hit(11, 10, created = "2022-05-01T10:00:00+00:00"),
+    hit(21, 20, created = "2024-06-01T10:00:00+00:00")
+  ))
+  down <- TRUE # the network fails during the second run (2024)
+  local_mocked_bindings(zenodo_get = function(url, ..., size = 25, q = NULL) {
+    if (down && size > 1 && grepl("2024-01-01", q %||% "")) stop("network down")
+    z$get(url, ..., size = size, q = q)
+  })
+  pf <- local_project()
+  dir <- file.path(pf, "raw", "zenodo")
+  args <- list(community = "c", from = "2022-01-01", to = "2025-01-01", project_folder = pf)
+  expect_error(quiet(do.call(zenodo_fetch, args)), "network down")
+  expect_equal(zenodo_id_table(dir)$id, "11") # the 2022 run was kept
+  expect_false(dir.exists(paste0(dir, ".tmp")))
+  expect_error(zenodo_fetch(community = "other", project_folder = pf), "other arguments")
+
+  down <- FALSE
+  expect_message(do.call(zenodo_fetch, args), "1 to download: 2024 \\(0 -> 1\\)")
+  expect_equal(sort(zenodo_id_table(dir)$id), c("11", "21"))
+  expect_false(is.null(jsonlite::read_json(file.path(dir, "_query.json"))$finished))
+})

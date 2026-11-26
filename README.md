@@ -97,6 +97,10 @@ zenodo_fetch(community = "big-community", project_folder = "big", interval = "mo
              parquet_split = "month")
 ```
 
+A first download of such a source takes hours. If it stops (network, laptop closed, …),
+call `zenodo_fetch()` again with the same arguments: what was downloaded is kept, and only
+the rest is downloaded (with `interval = "month"`, at most the month in progress is lost).
+
 The design, the field mapping and the decisions behind them are in
 [APPROACH.md](APPROACH.md).
 

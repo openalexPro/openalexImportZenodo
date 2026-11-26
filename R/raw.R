@@ -270,10 +270,11 @@ check_zenodo <- function(cfg, dir, full = FALSE, recheck_last = NULL) {
 
 # Downloads the intervals the check found changed and merges them into the part folders of
 # `dir`. Consecutive changed intervals with fewer than 10,000 records together are downloaded
-# in one query; the counts from the check are reused, so no extra count requests are needed.
-# Everything is downloaded into a temporary folder first; only then are the parts replaced.
-# `full`: all stored records are replaced. Returns the last change (added / removed deposits
-# and records), or NULL if nothing changed.
+# in one query (a run); the counts from the check are reused, so no extra count requests are
+# needed. Each run is merged as soon as it is downloaded, so an interrupted download keeps
+# what it has and the next check downloads only the rest. Intervals now empty on Zenodo (and,
+# with `full`, all records outside the downloaded intervals) are dropped at the end.
+# Returns the last change (added / removed deposits and records), or NULL if nothing changed.
 fetch_zenodo <- function(cfg, changed, dir, full = FALSE, split = "none", limit = 10000) {
   dir.create(dir, recursive = TRUE, showWarnings = FALSE)
   if (!nrow(changed)) return(NULL)
@@ -283,6 +284,10 @@ fetch_zenodo <- function(cfg, changed, dir, full = FALSE, split = "none", limit 
   unlink(tmp_root, recursive = TRUE)
   on.exit(unlink(tmp_root, recursive = TRUE))
   na_null <- function(x) if (is.na(x)) NULL else x
+  any_of <- function(b) {
+    paste0("(", vapply(seq_len(nrow(b)), function(i) sql_in_interval(b$from[i], b$to[i]), ""),
+           ")", collapse = " OR ")
+  }
 
   # runs of consecutive intervals to download together
   get <- changed[changed$new > 0, , drop = FALSE]
@@ -293,16 +298,21 @@ fetch_zenodo <- function(cfg, changed, dir, full = FALSE, split = "none", limit 
     run[i] <- if (i == 1) 1L else if (joins) run[i - 1] else run[i - 1] + 1L
   }
   for (r in unique(run)) {
-    g <- get[run == r, ]
+    g <- get[run == r, , drop = FALSE]
     d <- file.path(tmp_root, paste0("run", r))
-    dir.create(d, recursive = TRUE)
-    fetch_zenodo_range(cfg, d, na_null(g$from[1]), na_null(g$to[nrow(g)]), n = sum(g$new))
+    dir.create(file.path(d, "dl"), recursive = TRUE)
+    fetch_zenodo_range(cfg, file.path(d, "dl"), na_null(g$from[1]), na_null(g$to[nrow(g)]), n = sum(g$new))
+    zenodo_merge(dir, d, any_of(g), g, split)
+    unlink(d, recursive = TRUE)
   }
-  drop <- if (full) "TRUE" else {
-    paste0("(", vapply(seq_len(nrow(changed)), function(i) sql_in_interval(changed$from[i], changed$to[i]), ""),
-           ")", collapse = " OR ")
+  gone <- changed[changed$new == 0, , drop = FALSE]
+  drop <- if (full) {
+    if (nrow(get)) sprintf("NOT (%s)", any_of(get)) else "TRUE"
+  } else if (nrow(gone)) any_of(gone)
+  if (!is.null(drop)) {
+    everything <- data.frame(from = NA_character_, to = NA_character_)
+    zenodo_merge(dir, file.path(tmp_root, "drop"), drop, if (full) everything else gone, split)
   }
-  zenodo_merge(dir, tmp_root, drop, if (!full) changed, split)
 
   after <- zenodo_id_table(dir, ids)
   if (anyDuplicated(after$id)) stop("Duplicate records in ", dir, "; run with `full = TRUE`.", call. = FALSE)

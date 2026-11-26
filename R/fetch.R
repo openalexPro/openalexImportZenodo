@@ -94,6 +94,16 @@ zenodo_fetch <- function(community = NULL, query = NULL, ids = NULL, communities
     cfg$parents <- if (!full && !is.null(old$source$parents)) old$source$parents else zenodo_resolve_ids(cfg$ids)
   }
   if (full) old$updated_watermark <- NULL
+  if (is.null(old)) {
+    # first download: record the arguments now, so that an interrupted download is resumed
+    # (not mixed with other arguments) and edits made meanwhile are caught by the watermark
+    dir.create(dir, recursive = TRUE, showWarnings = FALSE)
+    jsonlite::write_json(list(source = cfg,
+                              updated_watermark = format(started, "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
+                              build = list(versions = versions, stats = stats, parquet_split = split),
+                              finished = NULL),
+                         rec_file, auto_unbox = TRUE, pretty = TRUE, null = "null", digits = NA)
+  }
 
   zenodo_convert_layout(dir, split)
   changed <- check_zenodo(cfg, dir, full, old$recheck_last)
