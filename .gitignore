@@ -10,3 +10,7 @@
 *.parquet
 *.duckdb
 .claude/settings.local.json
+# Project folders of local test runs (data, query records)
+/ipbes_zenodo/
+_query.json
+_query.html
