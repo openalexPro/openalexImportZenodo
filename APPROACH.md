@@ -67,7 +67,7 @@ year, all; default year), `recheck_interval` + `recheck_per_run` (rolling rechec
 `full = FALSE`. Several sources = several calls (or `lapply()` / a targets pipeline in the
 user's project).
 
-The arguments of the first download are stored in `raw/<name>/_state.json`. A later call
+The arguments of the first download are stored in `raw/<name>/_query.json`. A later call
 for the same `name` with different query arguments stops with an error (use `full = TRUE`
 to redefine it), so an update cannot silently mix two queries.
 `zenodo_update(project_folder, name)` reruns a source from its stored arguments; with
@@ -112,13 +112,35 @@ sources the deposit was found in) when writing a combined corpus.
 ```
 <project_folder>/
   raw/<name>/<bucket>/*.parquet     every version; id columns + `json` (the full hit, verbatim)
-  raw/<name>/_state.json            source arguments, last run (UTC), `updated` watermark, recheck position
-  raw/<name>/changes.json           last change (as zenodo_changes.json now)
+  raw/<name>/_query.json            the query record (below)
+  raw/<name>/_query.html            the same, readable, with links to the query on zenodo.org
   corpus/query=<name>/data.parquet  dataset 1: the works (deposits), OpenAlex schema + zenodo_* columns
   corpus/_dataset.json                marker (deterministic; see openalexPro discussion)
   links/query=<name>/data.parquet   dataset 2: the links, one row per link (section 9)
   files/<recid>/<key>                 on request only (zenodo_download_files())
 ```
+
+**One folder per interval** (`raw/<name>/<bucket>/`, e.g. `2024/` or `2024-03/`): an update
+replaces only the folders of changed intervals. The number of records per interval is
+**not stored**: the update check counts the rows in each folder (that is what is compared
+with Zenodo's count), so the data itself is the reference and cannot drift from a saved
+number. A folder can hold several files (chunks of up to 10,000 records).
+
+**`_query.json` / `_query.html`**, as `pro_fetch()` writes `_query.json` + `_query_oql.html`
+and `pro_collection()` writes `_collection.json`. One file replaces zenodo-openalex-collection's
+`zenodo_changes.json` and `zenodo_recheck.json`:
+
+- the source: `community` / `query` / `ids` and all other arguments (`from`, `to`,
+  `interval`, recheck, `select`), and the Zenodo API URL and query string that run;
+- the runs: `started`, `finished`, records and deposits, requests, last change (added /
+  removed deposits and records), `updated` watermark, rolling-recheck position,
+  package version.
+
+The HTML shows the same readably, with the query as a link to Zenodo's own search page
+(`zenodo.org/communities/<id>/records?q=…` or `zenodo.org/search?q=…`) and the records per
+interval (counted from the folders). Unlike `pro_fetch()` there is no OQL rendering: Zenodo
+queries are Elasticsearch query strings, not OpenAlex queries. Both files start with `_`, so
+arrow and openalexAPI skip them.
 
 So the output is **two parquet datasets**: `corpus/` (one row per deposit — what openalexAPI
 serves and every openalexPro package reads) and `links/` (one row per link between a
@@ -140,7 +162,7 @@ before parquet compression).
 field selection (`fields=` returns the full record, checked 2026-11-26), so `select` does
 not make downloads smaller; it only limits what is stored in `json`. It takes top-level or
 dotted paths (`"metadata.title"`, `"metadata.related_identifiers"`); the ID columns are
-always kept. It is stored in `_state.json`; changing it needs `full = TRUE`, because fields
+always kept. It is stored in `_query.json`; changing it needs `full = TRUE`, because fields
 not stored can only come back by downloading again. `zenodo_build()` treats missing fields
 as empty.
 
