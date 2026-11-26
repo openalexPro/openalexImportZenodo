@@ -64,6 +64,27 @@ zenodo_fetch(community = "ipbes", project_folder = "proj", interval = "month")
 Each deposit (all versions of a Zenodo upload) is one work with `id` `zenodo:<concept record
 ID>`. `proj/raw/<name>/_query.html` shows what was asked and the last run.
 
+## Choosing the check interval: speed and accuracy
+
+An update counts the records on Zenodo per interval of their creation date (`interval`:
+week, month, quarter, year or all) and downloads only intervals whose count differs from the
+stored records. Edited records are found separately, by their `updated` date.
+
+- **Accuracy:** a removal and an addition within the **same** interval leave its count
+  unchanged, so that change is missed. Shorter intervals make this less likely. Every interval
+  of the chosen size is counted; there is deliberately no shortcut that first counts coarser
+  intervals, because that would miss such changes within the coarser interval again.
+- **Speed:** each interval costs one request, and Zenodo allows 30 per minute (2.2 s each).
+  The time depends on the number of intervals, not on the size of the source. From 2013 to
+  now: by year ~14 requests (~30 s), by month ~167 (~6 min), by week ~725 (~27 min) per
+  source. `from` / `to` shorten this.
+- **Rolling recheck:** `recheck_interval` + `recheck_per_run` also count a few finer intervals
+  per run, in turn, which catches changes that cancel out within a coarser interval over time.
+
+The interval can be different in every call, without downloading again: e.g. `"week"` for an
+active source, `"month"` with a weekly rolling recheck for a big one, `"year"` for an old
+date range.
+
 The design, the field mapping and the decisions behind them are in
 [APPROACH.md](APPROACH.md).
 
