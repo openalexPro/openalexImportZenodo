@@ -62,16 +62,20 @@ zenodo_fetch(ids = c("10.5281/zenodo.3831673", "7654321"), project_folder = "pro
              name = "assessment_refs")
 ```
 
-Optional for all: `from`, `to` (Zenodo `created` range), `interval` (week, month, quarter,
-year, all; default year), `recheck_interval` + `recheck_per_run` (rolling recheck),
-`full = FALSE`. Several sources = several calls (or `lapply()` / a targets pipeline in the
-user's project).
+Optional for all: `from`, `to` (Zenodo `created` range), `full = FALSE`, and the update
+check settings `interval` (week, month, quarter, year, all) and `recheck_interval` +
+`recheck_per_run` (rolling recheck). Several sources = several calls (or `lapply()` / a
+targets pipeline in the user's project).
 
-The arguments of the first download are stored in `raw/<name>/_query.json`. A later call
-for the same `name` with different query arguments stops with an error (use `full = TRUE`
-to redefine it), so an update cannot silently mix two queries.
-`zenodo_update(project_folder, name)` reruns a source from its stored arguments; with
-`name = NULL`, all sources in `project_folder`.
+The arguments are stored in `raw/<name>/_query.json`. A later call for the same `name`
+with a different **query** (`community` / `query` / `ids`, `communities`, `resource_type`,
+`from`, `to`, `select`) stops with an error (use `full = TRUE` to redefine it), so an update
+cannot silently mix two queries. The **check settings** (`interval`, recheck) and the build
+settings (`versions`, `stats`) are not part of the query: they can be different in every call
+(decided 2026-11-26), and the last ones used are the defaults of the next call.
+`zenodo_update(project_folder, name, interval = NULL)` reruns a source from its stored
+arguments, optionally with another interval; with `name = NULL`, all sources in
+`project_folder`.
 
 - **Community** → `GET /api/communities/<id>/records?allversions=true` (as now).
 - **Search** → `GET /api/records?q=<query> AND created:[from TO to}&allversions=true`,
@@ -111,7 +115,7 @@ sources the deposit was found in) when writing a combined corpus.
 
 ```
 <project_folder>/
-  raw/<name>/<bucket>/*.parquet     every version; id columns + `json` (the full hit, verbatim)
+  raw/<name>/<year>/*.parquet       every version, by year of `created`; id columns + `json`
   raw/<name>/_query.json            the query record (below)
   raw/<name>/_query.html            the same, readable, with links to the query on zenodo.org
   corpus/query=<name>/data.parquet  dataset 1: the works (deposits), OpenAlex schema + zenodo_* columns
@@ -122,25 +126,41 @@ sources the deposit was found in) when writing a combined corpus.
   files/<recid>/<key>                 on request only (zenodo_download_files())
 ```
 
-**One folder per interval** (`raw/<name>/<bucket>/`, e.g. `2024/` or `2024-03/`): an update
-replaces only the folders of changed intervals. The number of records per interval is
-**not stored**: the update check counts the rows in each folder (that is what is compared
-with Zenodo's count), so the data itself is the reference and cannot drift from a saved
-number. A folder can hold several files (chunks of up to 10,000 records).
+**Storage and check are independent** (decided 2026-11-26). Records are stored in one
+folder per **year of `created`** (`raw/<name>/2024/`), always; this is internal and does not
+depend on the check interval. The update check counts the stored records per interval by
+`created` (a range join in DuckDB over the stored `created` column), so **any interval can be
+checked at any time**: weekly for an active source, monthly for a big one, yearly for an old
+date range, and another interval next time, without downloading again. No counts are stored:
+the data itself is the reference and cannot drift from a saved number.
+
+All stored `created` values are UTC in one fixed format (`2024-03-01T10:00:00.123456+00:00`,
+checked on the IPBES data 2026-11-26), so they compare correctly as text with the interval
+limits (`"2024-03-01"`, `"2024-03-01T10:00:00"`), which Zenodo also reads as UTC.
+
+A changed interval is downloaded into a temporary folder and **merged**: each year folder the
+interval touches is rewritten with its stored records outside the interval plus the new ones
+(an interval across New Year touches two). For a big source a changed week thus rewrites one
+year locally (seconds to tens of seconds), small next to the download at 2.2 s per request.
+Each year folder is replaced atomically; a run that stops between two years leaves counts that
+differ from Zenodo, and the next run repairs them.
+
+Downloads made with the earlier layout (one folder per check interval) are converted to year
+folders locally on the next run, without downloading.
 
 **`_query.json` / `_query.html`**, as `pro_fetch()` writes `_query.json` + `_query_oql.html`
 and `pro_collection()` writes `_collection.json`. One file replaces zenodo-openalex-collection's
 `zenodo_changes.json` and `zenodo_recheck.json`:
 
 - the source: `community` / `query` / `ids` and all other arguments (`from`, `to`,
-  `interval`, recheck, `select`), and the Zenodo API URL and query string that run;
-- the runs: `started`, `finished`, records and deposits, requests, last change (added /
-  removed deposits and records), `updated` watermark, rolling-recheck position,
-  package version.
+  `select`; the last `interval` and recheck used), and the Zenodo API URL and query string;
+- the runs: `started`, `finished`, records and deposits, requests, the intervals checked
+  and changed, last change (added / removed deposits and records, edited records), `updated`
+  watermark, rolling-recheck position, the last `versions` / `stats`, package version.
 
 The HTML shows the same readably, with the query as a link to Zenodo's own search page
 (`zenodo.org/communities/<id>/records?q=…` or `zenodo.org/search?q=…`) and the records per
-interval (counted from the folders). Unlike `pro_fetch()` there is no OQL rendering: Zenodo
+year. Unlike `pro_fetch()` there is no OQL rendering: Zenodo
 queries are Elasticsearch query strings, not OpenAlex queries. Both files start with `_`, so
 arrow and openalexAPI skip them.
 
@@ -157,8 +177,9 @@ query instead of unnesting lists.
 **Important change vs. zenodo-openalex-collection:** keep the **full JSON of each hit** in
 the raw parquet (`json` VARCHAR), not only the selected columns. Then remapping (new fields,
 fixed mapping) never needs a re-download — the expensive part at 30 requests/minute.
-An InvenioRDM hit is ~35 kB as JSON (IPBES: ~35 MB; a 250,000-record community ≈ 9 GB
-before parquet compression).
+An InvenioRDM hit is ~16.5 kB as JSON on average (measured on IPBES 2026-11-26: 1,034
+records, 17 MB JSON, 3.5 MB as parquet; the corpus is 0.43 MB). A 2.4-million-record source
+is thus ~8 GB in `raw/` and ~1–1.5 GB as corpus — accepted as is (decided 2026-11-26).
 
 **`select`** (argument of `zenodo_fetch()`, default `NULL` = everything): Zenodo ignores
 field selection (`fields=` returns the full record, checked 2026-11-26), so `select` does
@@ -176,9 +197,9 @@ Three mechanisms, each catching what the others miss:
 
 | Change | Detected by | Cost |
 |---|---|---|
-| New / deleted versions | **Interval count check** (existing `check_zenodo()`): 1 count request per interval, re-download intervals whose count changed | ~14 requests (year) per source and run |
-| Add + remove cancelling out in one interval | **Rolling recheck** (existing `recheck: per_run`) | `per_run` extra requests |
-| **Metadata edits** (title, related identifiers, new community, licence, …) — counts do not change | **`updated` watermark**: `q=updated:[<watermark - 1 day> TO *]` on the same source; upsert the returned hits into their buckets (bucket from `created`) | 1 request + pages of edited records |
+| New / deleted versions | **Interval count check**: per interval of the chosen size, Zenodo's count vs. the stored records counted by `created`; changed intervals are downloaded and merged | 1 request per interval (2013 to now: ~14 by year, ~167 by month, ~725 by week) |
+| Add + remove cancelling out in one interval | **Rolling recheck** (`recheck_interval`, `recheck_per_run`): the next `per_run` finer intervals are counted too; a changed finer interval is downloaded by itself | `per_run` extra requests |
+| **Metadata edits** (title, related identifiers, new community, licence, …) — counts do not change | **`updated` watermark**: `q=updated:[<watermark - 1 day> TO *]` on the same source; the hits replace their stored copies (merged into their year by `created`). More than 10,000 edits are split by creation date like any download | 1 request + pages of edited records |
 
 The `updated` query is new; verified live on 2026-11-25:
 `/api/communities/ipbes/records?allversions=true&q=updated:[2026-10-01 TO *]` → 13 of 1,034
@@ -188,13 +209,15 @@ updated in July/August 2024), so popular records are not re-downloaded every run
 verify: that removing a record from a community bumps `updated` (if not, the count check
 catches it anyway).
 
-Rules carried over: buckets are replaced atomically (temp folder, then rename); a failed
-run leaves the old data and the old watermark; the watermark only advances after a
-successful run; a full re-download stays a manual switch (`full = TRUE`).
+Rules: everything is downloaded before anything is replaced; year folders are replaced
+atomically (temp folder, then rename); a failed run leaves the old watermark; the watermark
+only advances after a successful run; a full re-download stays a manual switch
+(`full = TRUE`).
 
-Update of the corpus after a fetch: **rebuild only the partitions of sources that changed**
-(as `update_corpus()` in openalexImportPolicy). Mapping a few thousand records in DuckDB is
-seconds; not worth incremental row-level writes.
+Update of the corpus: `zenodo_fetch()` rebuilds the source's corpus and link table after
+every run, like `pro_fetch()` leaves a usable dataset. Mapping in DuckDB is seconds for a few
+thousand records; incremental row-level writes are not worth it until a big source shows
+otherwise.
 
 ---
 
@@ -413,6 +436,9 @@ Decided 2026-11-25:
   `FALSE`), stored with their date (`zenodo_stats`, `zenodo_stats_date`); see the note below.
 - **Q3**: use Zenodo's new InvenioRDM format (section 8).
 - **Q4**: public repository from the start.
+- **2026-11-26**: `zenodo_fetch()` builds corpus and links after every run; storage by year
+  and the check interval chosen per run (sections 5–6); `raw/` keeps all versions with full
+  JSON, the space is accepted.
 
 ### Note on Q2: view and download counts
 
