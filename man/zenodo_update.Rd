@@ -2,21 +2,20 @@
 % Please edit documentation in R/update.R
 \name{zenodo_update}
 \alias{zenodo_update}
-\title{Update sources and rebuild their corpus}
+\title{Update sources}
 \usage{
-zenodo_update(project_folder, name = NULL, ...)
+zenodo_update(project_folder, name = NULL)
 }
 \arguments{
 \item{project_folder}{Project folder.}
 
 \item{name}{Names of the sources; \code{NULL} (default) for all sources in \code{project_folder}.}
-
-\item{...}{Passed to \code{\link[=zenodo_build]{zenodo_build()}} (\code{versions}, \code{stats}).}
 }
 \value{
 Invisibly, the names of the sources updated.
 }
 \description{
 Runs \code{\link[=zenodo_fetch]{zenodo_fetch()}} for each source with the arguments stored in its
-\verb{raw/<name>/_query.json}, then \code{\link[=zenodo_build]{zenodo_build()}}.
+\verb{raw/<name>/_query.json} (download arguments and the \code{versions} / \code{stats} of the last
+build), which also rebuilds its corpus and link table.
 }

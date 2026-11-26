@@ -29,8 +29,9 @@ of \code{\link[=zenodo_fetch]{zenodo_fetch()}}).}
 Invisibly, the paths of the corpus and link files.
 }
 \description{
-Maps the stored Zenodo records of \code{name} (see \code{\link[=zenodo_fetch]{zenodo_fetch()}}) to the OpenAlex works
-schema and writes
+\code{\link[=zenodo_fetch]{zenodo_fetch()}} runs this after each download, so it is only needed to rebuild with
+other \code{versions} or \code{stats}, or after updating the package, without downloading again.
+It maps the stored Zenodo records of \code{name} to the OpenAlex works schema and writes
 }
 \details{
 \itemize{

@@ -1,7 +1,8 @@
 #' Build the works corpus and the link table of a source
 #'
-#' Maps the stored Zenodo records of `name` (see [zenodo_fetch()]) to the OpenAlex works
-#' schema and writes
+#' [zenodo_fetch()] runs this after each download, so it is only needed to rebuild with
+#' other `versions` or `stats`, or after updating the package, without downloading again.
+#' It maps the stored Zenodo records of `name` to the OpenAlex works schema and writes
 #'
 #' - `<project_folder>/corpus/query=<name>/data.parquet`: one row per deposit (all versions
 #'   of a Zenodo upload), from its newest version, `id` = `zenodo:<concept record ID>`;

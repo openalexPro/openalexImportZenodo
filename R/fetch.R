@@ -1,8 +1,10 @@
-#' Download or update Zenodo records
+#' Download or update Zenodo records as a works corpus
 #'
 #' Downloads all records (all versions) of a Zenodo community, a Zenodo search or a list
 #' of records into `<project_folder>/raw/<name>/`, one folder per interval of the records'
-#' creation date. Called again, it downloads only what changed:
+#' creation date, and then builds the works corpus and the link table from them (see
+#' [zenodo_build()]), so that `<project_folder>/corpus/` can be used right away, e.g. with
+#' `openalexAPI::serve_corpus()`. Called again, it downloads only what changed:
 #'
 #' - **added or removed records**: the records per interval are counted on Zenodo (one
 #'   request per interval) and compared with the stored folders; intervals whose counts
@@ -21,6 +23,9 @@
 #' same is in `raw/<name>/_query.html`, readable, with a link to the search on zenodo.org.
 #' A later call for the same `name` must use the same arguments, or `full = TRUE`.
 #' [zenodo_update()] reruns a source from its stored arguments.
+#'
+#' `versions` and `stats` only shape the corpus, not the download: they can change
+#' between calls, and [zenodo_build()] rebuilds with other values without downloading.
 #'
 #' @param community Zenodo community (the `<id>` in `zenodo.org/communities/<id>`).
 #' @param query Zenodo search string (as on zenodo.org, e.g. `"bats AND switzerland"`).
@@ -42,13 +47,16 @@
 #' @param project_folder Project folder.
 #' @param name Name of the source within the project folder.
 #' @param full Download everything again; also needed to change the arguments of `name`.
+#' @inheritParams zenodo_build
 #'
-#' @return Invisibly, the path of `raw/<name>`.
+#' @return Invisibly, the paths of the corpus and link files (as [zenodo_build()]).
 #' @export
 zenodo_fetch <- function(community = NULL, query = NULL, ids = NULL, communities = NULL,
                          resource_type = NULL, from = NULL, to = NULL, interval = "year",
                          recheck_interval = NULL, recheck_per_run = NULL, select = NULL,
-                         project_folder, name = "zenodo", full = FALSE) {
+                         project_folder, name = "zenodo", full = FALSE,
+                         versions = c("latest", "all"), stats = FALSE) {
+  versions <- match.arg(versions)
   check_name(name)
   cfg <- zenodo_source(community, query, ids, communities, resource_type, from, to, interval,
                        recheck_interval, recheck_per_run, select)
@@ -93,10 +101,16 @@ zenodo_fetch <- function(community = NULL, query = NULL, ids = NULL, communities
     updated_watermark = format(started, "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
     recheck_last = attr(changed, "recheck_last"),
     last_change = change %||% old$last_change,
+    build = list(versions = versions, stats = stats),
     openalexImportZenodo = as.character(utils::packageVersion("openalexImportZenodo"))
   )
   write_query_record(rec, dir)
-  invisible(dir)
+  if (!nrow(d)) { # nothing on Zenodo (any more): no corpus
+    message("No records for `", name, "`; no corpus.")
+    for (part in c("corpus", "links")) unlink(file.path(project_folder, part, paste0("query=", name)), recursive = TRUE)
+    return(invisible(NULL))
+  }
+  zenodo_build(project_folder, name, versions = versions, stats = stats)
 }
 
 check_name <- function(name) {

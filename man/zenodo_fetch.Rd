@@ -2,7 +2,7 @@
 % Please edit documentation in R/fetch.R
 \name{zenodo_fetch}
 \alias{zenodo_fetch}
-\title{Download or update Zenodo records}
+\title{Download or update Zenodo records as a works corpus}
 \usage{
 zenodo_fetch(
   community = NULL,
@@ -18,7 +18,9 @@ zenodo_fetch(
   select = NULL,
   project_folder,
   name = "zenodo",
-  full = FALSE
+  full = FALSE,
+  versions = c("latest", "all"),
+  stats = FALSE
 )
 }
 \arguments{
@@ -53,14 +55,25 @@ not download time.}
 \item{name}{Name of the source within the project folder.}
 
 \item{full}{Download everything again; also needed to change the arguments of \code{name}.}
+
+\item{versions}{\code{"latest"} (default): one row per deposit, from its newest version;
+\code{"all"}: one row per version, \code{id} = \verb{zenodo:<record ID>}. Links are always between
+deposits.}
+
+\item{stats}{Add Zenodo's views and downloads (\code{zenodo_stats}) and the time they were
+downloaded (\code{zenodo_stats_date}). They grow daily without changing a record, so they
+are only as recent as the record's last download. Needs \code{stats} stored (the default
+of \code{\link[=zenodo_fetch]{zenodo_fetch()}}).}
 }
 \value{
-Invisibly, the path of \verb{raw/<name>}.
+Invisibly, the paths of the corpus and link files (as \code{\link[=zenodo_build]{zenodo_build()}}).
 }
 \description{
 Downloads all records (all versions) of a Zenodo community, a Zenodo search or a list
 of records into \verb{<project_folder>/raw/<name>/}, one folder per interval of the records'
-creation date. Called again, it downloads only what changed:
+creation date, and then builds the works corpus and the link table from them (see
+\code{\link[=zenodo_build]{zenodo_build()}}), so that \verb{<project_folder>/corpus/} can be used right away, e.g. with
+\code{openalexAPI::serve_corpus()}. Called again, it downloads only what changed:
 }
 \details{
 \itemize{
@@ -82,4 +95,7 @@ The arguments are stored in \verb{raw/<name>/_query.json} together with the last
 same is in \verb{raw/<name>/_query.html}, readable, with a link to the search on zenodo.org.
 A later call for the same \code{name} must use the same arguments, or \code{full = TRUE}.
 \code{\link[=zenodo_update]{zenodo_update()}} reruns a source from its stored arguments.
+
+\code{versions} and \code{stats} only shape the corpus, not the download: they can change
+between calls, and \code{\link[=zenodo_build]{zenodo_build()}} rebuilds with other values without downloading.
 }

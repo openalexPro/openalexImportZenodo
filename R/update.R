@@ -1,26 +1,27 @@
-#' Update sources and rebuild their corpus
+#' Update sources
 #'
 #' Runs [zenodo_fetch()] for each source with the arguments stored in its
-#' `raw/<name>/_query.json`, then [zenodo_build()].
+#' `raw/<name>/_query.json` (download arguments and the `versions` / `stats` of the last
+#' build), which also rebuilds its corpus and link table.
 #'
 #' @param project_folder Project folder.
 #' @param name Names of the sources; `NULL` (default) for all sources in `project_folder`.
-#' @param ... Passed to [zenodo_build()] (`versions`, `stats`).
 #' @return Invisibly, the names of the sources updated.
 #' @export
-zenodo_update <- function(project_folder, name = NULL, ...) {
+zenodo_update <- function(project_folder, name = NULL) {
   name <- name %||% zenodo_names(project_folder)
   for (n in name) {
     rec_file <- file.path(project_folder, "raw", n, "_query.json")
     if (!file.exists(rec_file)) stop("No source `", n, "` in ", project_folder, ".", call. = FALSE)
-    s <- jsonlite::read_json(rec_file, simplifyVector = TRUE)$source
+    rec <- jsonlite::read_json(rec_file, simplifyVector = TRUE)
+    s <- rec$source
     message("== ", n)
     zenodo_fetch(community = s$community, query = s$query, ids = s$ids,
                  communities = s$communities, resource_type = s$resource_type,
                  from = s$from, to = s$to, interval = s$interval,
                  recheck_interval = s$recheck$interval, recheck_per_run = s$recheck$per_run,
-                 select = s$select, project_folder = project_folder, name = n)
-    zenodo_build(project_folder, n, ...)
+                 select = s$select, project_folder = project_folder, name = n,
+                 versions = rec$build$versions %||% "latest", stats = isTRUE(rec$build$stats))
   }
   invisible(name)
 }

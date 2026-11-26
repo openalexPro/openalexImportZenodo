@@ -13,7 +13,6 @@ test_that("links are oriented like OpenAlex, deduplicated and resolved", {
   local_fake_zenodo(hits)
   pf <- local_project()
   quiet(zenodo_fetch(community = "c", project_folder = pf))
-  quiet(zenodo_build(pf))
   l <- zenodo_links(pf)
   key <- paste(l$origin, l$relation, l$target)
   expect_setequal(key, c(

@@ -7,7 +7,8 @@ hits3 <- function() list(
 test_that("first download stores records per interval and the query record", {
   local_fake_zenodo(hits3())
   pf <- local_project()
-  dir <- quiet(zenodo_fetch(community = "c", from = "2023-01-01", to = "2025-01-01", project_folder = pf))
+  quiet(zenodo_fetch(community = "c", from = "2023-01-01", to = "2025-01-01", project_folder = pf))
+  dir <- file.path(pf, "raw", "zenodo")
   expect_setequal(list.files(dir), c("2023", "2024", "_query.json", "_query.html"))
   expect_equal(unname(zenodo_bucket_counts(dir)), c(1, 2))
   rec <- jsonlite::read_json(file.path(dir, "_query.json"))

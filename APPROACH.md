@@ -96,7 +96,7 @@ Do the same:
   version** (`is_last`), `doi` = concept DOI (or the record DOI for deposits without one —
   `zenodo_deposit()`), plus a `zenodo_versions` list column (recid, doi, version,
   publication_date, created).
-- Import option `versions = "all"` (argument of `zenodo_build()`) writes one row per
+- Import option `versions = "all"` (argument of `zenodo_fetch()` / `zenodo_build()`) writes one row per
   version instead (IDs `zenodo:<recid>`), for version-level analysis. Default `"latest"`
   (decided 2026-11-25, Q1).
 
@@ -364,11 +364,13 @@ whole vocabulary — one place to change.
 ## 10. Exported API (sketch)
 
 ```r
-zenodo_fetch(community = , query = , ids = , ..., select = NULL, project_folder, name = "zenodo", full = FALSE)
-                                            # download / update raw (sections 3, 6)
+zenodo_fetch(community = , query = , ids = , ..., select = NULL, project_folder, name = "zenodo",
+             full = FALSE, versions = "latest", stats = FALSE)
+                                            # download / update raw (sections 3, 6), then build
+                                            # corpus + links, like pro_fetch(): usable after each call
 zenodo_build(project_folder, name = "zenodo", versions = "latest", stats = FALSE)
-                                            # map (Zenodo only) -> corpus, links
-zenodo_update(project_folder, name = NULL, ...)  # fetch (stored arguments) + build
+                                            # rebuild only (other versions / stats, new package version)
+zenodo_update(project_folder, name = NULL)  # zenodo_fetch() with the stored arguments
 zenodo_as_corpus(project_folder, out, name = NULL, ...)  # subset export, as policy_as_corpus()
 zenodo_links(project_folder, name = NULL, origin = NULL, target = NULL, link_type = NULL)
                                             # the link table, filtered as /links?filter=…

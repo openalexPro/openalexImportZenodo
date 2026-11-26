@@ -14,7 +14,8 @@ zenodo_fetch()  -> <project_folder>/raw/<name>/<interval>/*.parquet   (id column
                    raw/<name>/_query.json, _query.html                (arguments, last run, watermark)
 zenodo_build()  -> corpus/query=<name>/data.parquet                   (one row per deposit)
                    links/query=<name>/data.parquet                    (origin, target, link_type, ...)
-zenodo_update() =  zenodo_fetch() with stored arguments + zenodo_build()
+zenodo_fetch() calls zenodo_build() at the end (like pro_fetch(): a usable dataset after each call)
+zenodo_update() =  zenodo_fetch() with the stored arguments (incl. versions / stats)
 ```
 
 | File | Role |

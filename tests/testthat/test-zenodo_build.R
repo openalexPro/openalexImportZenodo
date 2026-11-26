@@ -1,8 +1,8 @@
+# zenodo_fetch() builds the corpus itself
 build_from <- function(hits, ..., name = "zenodo", select = NULL, env = parent.frame()) {
   local_fake_zenodo(hits, env = env)
   pf <- local_project(env)
-  quiet(zenodo_fetch(community = "c", select = select, project_folder = pf, name = name))
-  quiet(zenodo_build(pf, name, ...))
+  quiet(zenodo_fetch(community = "c", select = select, project_folder = pf, name = name, ...))
   pf
 }
 works <- function(pf, name = "zenodo") {
@@ -58,6 +58,23 @@ test_that("the real InvenioRDM record is mapped", {
   expect_gt(nrow(w$zenodo_related[[1]]), 0)
 })
 
-test_that("no records, no build", {
+test_that("zenodo_fetch() returns the built files; zenodo_build() rebuilds with other options", {
+  local_fake_zenodo(list(hit(11, 10, index = 1L, latest = FALSE), hit(12, 10, index = 2L)))
+  pf <- local_project()
+  out <- quiet(zenodo_fetch(community = "c", project_folder = pf))
+  expect_named(out, c("corpus", "links"))
+  expect_true(all(file.exists(out)))
+  expect_equal(nrow(arrow::read_parquet(out[["corpus"]])), 1)
+  quiet(zenodo_build(pf, versions = "all"))
+  expect_equal(nrow(arrow::read_parquet(out[["corpus"]])), 2)
+})
+
+test_that("no records, no corpus", {
   expect_error(zenodo_build(local_project()), "zenodo_fetch")
+  z <- local_fake_zenodo(list(hit(11)))
+  pf <- local_project()
+  quiet(zenodo_fetch(community = "c", project_folder = pf))
+  z$hits <- list()
+  expect_null(quiet(zenodo_fetch(community = "c", project_folder = pf)))
+  expect_false(dir.exists(file.path(pf, "corpus", "query=zenodo")))
 })

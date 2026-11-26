@@ -41,16 +41,16 @@ per request.
 ```r
 library(openalexImportZenodo)
 
-# Download (first call) or update (later calls) a community
+# Download (first call) or update (later calls) a community; the corpus
+# (proj/corpus/) and the link table (proj/links/) are built right away
 zenodo_fetch(community = "ipbes", project_folder = "proj")
 
 # A search, as a second source in the same project folder
 zenodo_fetch(query = "bats AND switzerland", resource_type = "dataset",
              project_folder = "proj", name = "bats", interval = "all")
 
-# Corpus (proj/corpus/) and link table (proj/links/)
-zenodo_build("proj")
-zenodo_build("proj", "bats")
+# Search it in the browser (openalexAPI), at http://127.0.0.1:8000/app
+openalexAPI::serve_corpus("proj/corpus", port = 8000)
 
 # Links into a deposit
 zenodo_links("proj", target = "zenodo:13850301")
