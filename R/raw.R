@@ -125,6 +125,14 @@ fetch_zenodo_range <- function(cfg, dir, from = NULL, to = NULL, limit = 10000, 
   written
 }
 
+# "2 h 05 min", "4 min", "30 s"
+duration <- function(secs) {
+  secs <- round(secs)
+  if (secs < 60) return(paste(secs, "s"))
+  m <- round(secs / 60)
+  if (m < 60) paste(m, "min") else sprintf("%d h %02d min", m %/% 60, m %% 60)
+}
+
 # DuckDB connection; no extensions are needed, so nothing is written to ~/.duckdb
 # (shared_home, duckdb >= 1.4).
 zenodo_duckdb <- function() {
@@ -235,20 +243,26 @@ stored_counts <- function(dir, b) {
 # one is returned as attribute "recheck_last".
 check_zenodo <- function(cfg, dir, full = FALSE, recheck_last = NULL) {
   na_null <- function(x) if (is.na(x)) NULL else x
-  count <- function(b) vapply(seq_len(nrow(b)), function(i) {
-    zenodo_count(cfg, zenodo_query(cfg, na_null(b$from[i]), na_null(b$to[i])))
-  }, 1)
+  count <- function(b, what) {
+    message(sprintf("Counting records on Zenodo by %s: %d intervals (~%s)", what, nrow(b),
+                    duration(nrow(b) * 2.2)))
+    vapply(seq_len(nrow(b)), function(i) {
+      n <- zenodo_count(cfg, zenodo_query(cfg, na_null(b$from[i]), na_null(b$to[i])))
+      message(sprintf("  [%d/%d] %s: %d", i, nrow(b), b$bucket[i], n))
+      n
+    }, 1)
+  }
   recheck <- !full && !is.null(cfg$recheck)
 
   b <- zenodo_buckets(cfg)
   b$old <- stored_counts(dir, b)
-  b$new <- count(b)
+  b$new <- count(b, cfg$interval)
   changed <- b[b$new != b$old | (full & (b$new > 0 | b$old > 0)), , drop = FALSE]
   if (recheck) {
     fine <- zenodo_buckets(utils::modifyList(cfg, list(interval = cfg$recheck$interval)))
     fine <- recheck_select(fine, cfg$recheck$per_run, recheck_last)
     fine$old <- stored_counts(dir, fine)
-    fine$new <- count(fine)
+    fine$new <- count(fine, paste(cfg$recheck$interval, "(rolling recheck)"))
     hit <- fine[fine$new != fine$old, , drop = FALSE]
     covered <- vapply(seq_len(nrow(hit)), function(i) length(zenodo_overlaps(hit[i, ], changed)) > 0, NA)
     changed <- rbind(changed, hit[!covered, , drop = FALSE])
@@ -297,13 +311,27 @@ fetch_zenodo <- function(cfg, changed, dir, full = FALSE, split = "none", limit 
       sum(get$new[run == run[i - 1]]) + get$new[i] < limit
     run[i] <- if (i == 1) 1L else if (joins) run[i - 1] else run[i - 1] + 1L
   }
+  pages <- function(n) ceiling(n / zenodo_page_size())
+  if (nrow(get)) {
+    message(sprintf("Downloading %d records in %d run(s) (~%s); each run is kept when done",
+                    sum(get$new), max(run), duration(sum(pages(get$new)) * 2.2)))
+  }
+  t0 <- Sys.time()
   for (r in unique(run)) {
     g <- get[run == r, , drop = FALSE]
+    message(sprintf("Run %d/%d: %s, %d records", r, max(run),
+                    paste(unique(g$bucket[c(1, nrow(g))]), collapse = " to "), sum(g$new)))
     d <- file.path(tmp_root, paste0("run", r))
     dir.create(file.path(d, "dl"), recursive = TRUE)
     fetch_zenodo_range(cfg, file.path(d, "dl"), na_null(g$from[1]), na_null(g$to[nrow(g)]), n = sum(g$new))
     zenodo_merge(dir, d, any_of(g), g, split)
     unlink(d, recursive = TRUE)
+    left <- sum(get$new[run > r])
+    if (left) {
+      done <- sum(get$new[run <= r])
+      el <- as.numeric(difftime(Sys.time(), t0, units = "secs"))
+      message(sprintf("Run %d/%d kept; %d records left (~%s)", r, max(run), left, duration(el / done * left)))
+    }
   }
   gone <- changed[changed$new == 0, , drop = FALSE]
   drop <- if (full) {

@@ -35,6 +35,7 @@ zenodo_build <- function(project_folder, name = "zenodo", versions = NULL, stats
   }
   src <- sprintf("read_parquet(%s, hive_partitioning = false, union_by_name = true)",
                  sql_files(stored_files(raw)))
+  message("Building the corpus: reading versions and related identifiers")
   # 1. the small fields of every record (no JSON kept): versions, newest version, links
   DBI::dbExecute(con, sprintf(
     "CREATE TEMP TABLE rs AS SELECT id, conceptrecid, doi, created, version_index, is_latest,
@@ -64,6 +65,7 @@ zenodo_build <- function(project_folder, name = "zenodo", versions = NULL, stats
     "SELECT min(created) AS lo FROM (SELECT created, (row_number() OVER (ORDER BY created) - 1) // %d AS k
      FROM sel) GROUP BY k ORDER BY lo", as.integer(build_batch)))$lo)
   for (i in seq_along(lo)) {
+    message(sprintf("Building the corpus: batch %d/%d", i, length(lo)))
     cond <- sql_in_interval(lo[i], if (i < length(lo)) lo[i + 1] else NA)
     DBI::dbExecute(con, "DROP TABLE IF EXISTS r")
     DBI::dbExecute(con, sprintf(
@@ -79,6 +81,7 @@ zenodo_build <- function(project_folder, name = "zenodo", versions = NULL, stats
   DBI::dbExecute(con, "DROP TABLE IF EXISTS r")
 
   # 3. split into the corpus and link files
+  message("Writing the corpus and link files")
   corpus <- file.path(project_folder, "corpus", paste0("query=", name))
   links <- file.path(project_folder, "links", paste0("query=", name))
   write_split(con, sprintf("SELECT * FROM read_parquet(%s)",
