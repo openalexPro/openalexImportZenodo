@@ -100,7 +100,7 @@ Do the same:
   version** (`is_last`), `doi` = concept DOI (or the record DOI for deposits without one —
   `zenodo_deposit()`), plus a `zenodo_versions` list column (recid, doi, version,
   publication_date, created).
-- Import option `versions = "all"` (argument of `zenodo_fetch()` / `zenodo_build()`) writes one row per
+- Import option `versions = "all"` (argument of `zenodo_fetch()`) writes one row per
   version instead (IDs `zenodo:<recid>`), for version-level analysis. Default `"latest"`
   (decided 2026-11-25, Q1).
 
@@ -147,7 +147,7 @@ Each year folder is replaced atomically, and each run of intervals is merged rig
 download (§6); a run that stops leaves counts that differ from Zenodo, and the next run
 repairs them.
 
-**`parquet_split`** (argument of `zenodo_fetch()` / `zenodo_build()`, decided 2026-11-26; the
+**`parquet_split`** (argument of `zenodo_fetch()`, decided 2026-11-26; the
 counterpart of `pro_fetch(compact_parquet = )`): how the files are split, for big sources.
 
 | `parquet_split` | `corpus/` and `links/` | `raw/` |
@@ -202,7 +202,7 @@ field selection (`fields=` returns the full record, checked 2026-11-26), so `sel
 not make downloads smaller; it only limits what is stored in `json`. It takes top-level or
 dotted paths (`"metadata.title"`, `"metadata.related_identifiers"`); the ID columns are
 always kept. It is stored in `_query.json`; changing it needs `full = TRUE`, because fields
-not stored can only come back by downloading again. `zenodo_build()` treats missing fields
+not stored can only come back by downloading again. The build treats missing fields
 as empty.
 
 ---
@@ -417,8 +417,7 @@ zenodo_fetch(community = , query = , ids = , ..., select = NULL, project_folder,
              full = FALSE, versions = NULL, stats = NULL, parquet_split = NULL)
                                             # download / update raw (sections 3, 6), then build
                                             # corpus + links, like pro_fetch(): usable after each call
-zenodo_build(project_folder, name = "zenodo", versions = NULL, stats = NULL, parquet_split = NULL)
-                                            # rebuild only (other versions / stats, new package version)
+                                            # (the build, zenodo_build(), is internal: decided 2026-11-26)
 zenodo_update(project_folder, name = NULL)  # zenodo_fetch() with the stored arguments
 zenodo_as_corpus(project_folder, out, name = NULL, ...)  # subset export, as policy_as_corpus()
 zenodo_links(project_folder, name = NULL, origin = NULL, target = NULL, link_type = NULL)

@@ -24,7 +24,7 @@ zenodo_links(
 A data frame.
 }
 \description{
-Reads the link table written by \code{\link[=zenodo_build]{zenodo_build()}}: one row per link from Zenodo's related
+Reads the link table written by \code{\link[=zenodo_fetch]{zenodo_fetch()}}: one row per link from Zenodo's related
 identifiers, shaped like OpenAlex's links (\code{api.openalex.org/links}): \code{origin},
 \code{target}, \code{link_type}, in the direction "origin does X to target" (a relation declared
 the other way round, such as \code{isCitedBy}, is flipped). Deposits of the source are

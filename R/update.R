@@ -50,7 +50,7 @@ zenodo_as_corpus <- function(project_folder, out, name = NULL) {
                                        full.names = FALSE))
   name <- name %||% built
   if (length(miss <- setdiff(name, built))) {
-    stop("Not built: ", toString(miss), "; run zenodo_build() first.", call. = FALSE)
+    stop("Not built: ", toString(miss), "; run zenodo_fetch() first.", call. = FALSE)
   }
   for (part in c("corpus", "links")) {
     for (n in name) {

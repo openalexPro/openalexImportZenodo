@@ -75,7 +75,7 @@ QUALIFY rank = 1")
 
 #' Links between Zenodo deposits and other works
 #'
-#' Reads the link table written by [zenodo_build()]: one row per link from Zenodo's related
+#' Reads the link table written by [zenodo_fetch()]: one row per link from Zenodo's related
 #' identifiers, shaped like OpenAlex's links (`api.openalex.org/links`): `origin`,
 #' `target`, `link_type`, in the direction "origin does X to target" (a relation declared
 #' the other way round, such as `isCitedBy`, is flipped). Deposits of the source are
@@ -97,7 +97,7 @@ QUALIFY rank = 1")
 zenodo_links <- function(project_folder, name = NULL, origin = NULL, target = NULL,
                          link_type = NULL) {
   dir <- file.path(project_folder, "links")
-  if (!dir.exists(dir)) stop("No link table in ", project_folder, "; run zenodo_build() first.", call. = FALSE)
+  if (!dir.exists(dir)) stop("No link table in ", project_folder, "; run zenodo_fetch() first.", call. = FALSE)
   # ponytail: filtered in R after reading; push filters into arrow if link tables get large
   d <- as.data.frame(dplyr::collect(arrow::open_dataset(dir)))
   keep <- rep(TRUE, nrow(d))

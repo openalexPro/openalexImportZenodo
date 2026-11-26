@@ -14,7 +14,7 @@ zenodo_fetch()  -> <project_folder>/raw/<name>/<part>/*.parquet       (all versi
                    raw/<name>/_query.json, _query.html                (arguments, last run, watermark)
 zenodo_build()  -> corpus/query=<name>/data.parquet                   (one row per deposit; + copies of _query.json/.html)
                    links/query=<name>/data.parquet                    (origin, target, link_type, ...)
-zenodo_fetch() calls zenodo_build() at the end (like pro_fetch(): a usable dataset after each call)
+zenodo_fetch() calls zenodo_build() (internal) at the end (like pro_fetch(): a usable dataset after each call)
 zenodo_update() =  zenodo_fetch() with the stored arguments (incl. versions / stats)
 ```
 
@@ -25,7 +25,7 @@ zenodo_update() =  zenodo_fetch() with the stored arguments (incl. versions / st
 | `R/source.R` | argument validation (`zenodo_source()`), query strings, URLs, ID resolution |
 | `R/raw.R` | count check (stored counts by `created`, any interval), range download with bisection, merge into part folders (year, or `parquet_split` period) in one partitioned COPY, `updated` upsert, layout conversion |
 | `R/fetch.R` | `zenodo_fetch()`, `_query.json` / `_query.html` |
-| `R/build.R` | `zenodo_build()`: DuckDB `json_transform()` + SQL mapping |
+| `R/build.R` | `zenodo_build()` (internal; its user docs live in `zenodo_fetch()`'s help): DuckDB `json_transform()` + SQL mapping |
 | `R/links.R` | link table (`build_links()`), `zenodo_links()` |
 | `R/update.R` | `zenodo_update()`, `zenodo_as_corpus()` |
 | `inst/extdata/` | `resource_types.csv`, `languages.csv` (from `data-raw/languages.R`), `relations.csv` |

@@ -59,19 +59,32 @@ not download time.}
 
 \item{full}{Download everything again; also needed to change the arguments of \code{name}.}
 
-\item{versions, stats, parquet_split}{As in \code{\link[=zenodo_build]{zenodo_build()}}; \code{NULL}: as last time (first
-time \code{"latest"}, \code{FALSE}, \code{"none"}). \code{parquet_split} also sets how \verb{raw/} is split: one
-folder per period (\code{"year"}, \code{"quarter"}, \code{"month"}) of each record's creation date, else
-one folder per year (with files of about that many records for a number).}
+\item{versions}{\code{"latest"}: one row per deposit, from its newest version; \code{"all"}: one
+row per version, \code{id} = \verb{zenodo:<record ID>}. Links are always between deposits.
+\code{NULL}: as last time (first time \code{"latest"}).}
+
+\item{stats}{\code{TRUE} adds Zenodo's views and downloads (\code{zenodo_stats}) and the time they
+were downloaded (\code{zenodo_stats_date}). They grow daily without changing a record, so they
+are only as recent as the record's last download. \code{NULL}: as last time (first time
+\code{FALSE}).}
+
+\item{parquet_split}{How the files are split, for big sources (as \code{compact_parquet} in
+\code{openalexPro::pro_fetch()}): \code{"none"} one \code{data.parquet}; \code{"year"}, \code{"quarter"} or
+\code{"month"} one file per period of the deposit's Zenodo creation date (\verb{2024.parquet},
+\code{2024-Q1.parquet}, \verb{2024-03.parquet}); a number, e.g. \code{250000}, files of about that many
+works (\code{part_0.parquet}, ...; approximate: DuckDB writes rows in groups of at least
+~2,048, so small numbers give larger files). Links are split by the creation date of the
+deposit that declared them. \verb{raw/} has one folder per period (or per year, for \code{"none"}
+and numbers). \code{NULL}: as last time (first time \code{"none"}).}
 }
 \value{
-Invisibly, the paths of the corpus and link files (as \code{\link[=zenodo_build]{zenodo_build()}}).
+Invisibly, the corpus and link folders.
 }
 \description{
 Downloads all records (all versions) of a Zenodo community, a Zenodo search or a list
 of records into \verb{<project_folder>/raw/<name>/}, one folder per year of the records'
 creation date, and then builds the works corpus and the link table from them (see
-\code{\link[=zenodo_build]{zenodo_build()}}), so that \verb{<project_folder>/corpus/} can be used right away, e.g. with
+"Corpus" below), so that \verb{<project_folder>/corpus/} can be used right away, e.g. with
 \code{openalexAPI::serve_corpus()}. Called again, it downloads only what changed:
 }
 \details{
@@ -96,7 +109,38 @@ The arguments are stored in \verb{raw/<name>/_query.json} together with the last
 same is in \verb{raw/<name>/_query.html}, readable, with a link to the search on zenodo.org.
 A later call for the same \code{name} must ask for the same records (\code{community} / \code{query} /
 \code{ids}, \code{communities}, \code{resource_type}, \code{from}, \code{to}, \code{select}), or use \code{full = TRUE}.
-The check settings (\code{interval}, recheck) and \code{versions} / \code{stats} can change in every
+The check settings (\code{interval}, recheck) and \code{versions} / \code{stats} / \code{parquet_split} can change in every
 call; left \code{NULL}, they are those of the last call. \code{\link[=zenodo_update]{zenodo_update()}} reruns a source from
 its stored arguments.
 }
+\section{Corpus}{
+
+Built from the stored records after each call (also when nothing changed; a changed
+\code{versions}, \code{stats} or \code{parquet_split} thus needs no download):
+\itemize{
+\item \verb{<project_folder>/corpus/query=<name>/}, with a copy of the source's \verb{_query.json} and
+\verb{_query.html}: one row per deposit (all versions of a Zenodo upload), from its newest
+version, \code{id} = \verb{zenodo:<concept record ID>};
+\item \verb{<project_folder>/links/query=<name>/}: the links from Zenodo's related identifiers,
+shaped like OpenAlex's links (see \code{\link[=zenodo_links]{zenodo_links()}}).
+}
+
+Each folder holds one \code{data.parquet}, or several files with \code{parquet_split}. A folder is
+replaced only when it is complete.
+
+Only Zenodo data is used; nothing is requested from OpenAlex. Fields Zenodo has no data
+for (\code{cited_by_count}, \code{topics}, ...) are absent.
+
+Mapped OpenAlex columns: \code{id}, \code{doi} (concept DOI, else record DOI), \code{title},
+\code{display_name}, \code{abstract} (description as plain text), \code{publication_date},
+\code{publication_year}, \code{type} (from the Zenodo resource type), \code{language} (ISO 639-1),
+\code{authorships} (creators; ORCID; affiliations with ROR IDs as \code{institutions}),
+\code{primary_location}, \code{open_access}, \code{keywords} (subjects), \code{funders}, \code{awards}, \code{biblio},
+\code{referenced_works} (deposits of the same source cited according to the related
+identifiers), \code{ids}, \code{created_date}, \code{updated_date}. Zenodo extras as \verb{zenodo_*}
+columns: record and concept IDs and DOIs, version and all versions, resource type,
+publisher, licence, access, communities, related identifiers as declared, free-text
+references, files, and (as JSON text) contributors, locations, dates, additional
+descriptions, alternative identifiers and Software Heritage IDs.
+}
+

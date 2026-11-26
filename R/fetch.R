@@ -3,7 +3,7 @@
 #' Downloads all records (all versions) of a Zenodo community, a Zenodo search or a list
 #' of records into `<project_folder>/raw/<name>/`, one folder per year of the records'
 #' creation date, and then builds the works corpus and the link table from them (see
-#' [zenodo_build()]), so that `<project_folder>/corpus/` can be used right away, e.g. with
+#' "Corpus" below), so that `<project_folder>/corpus/` can be used right away, e.g. with
 #' `openalexAPI::serve_corpus()`. Called again, it downloads only what changed:
 #'
 #' - **added or removed records**: the records per `interval` are counted on Zenodo (one
@@ -25,9 +25,37 @@
 #' same is in `raw/<name>/_query.html`, readable, with a link to the search on zenodo.org.
 #' A later call for the same `name` must ask for the same records (`community` / `query` /
 #' `ids`, `communities`, `resource_type`, `from`, `to`, `select`), or use `full = TRUE`.
-#' The check settings (`interval`, recheck) and `versions` / `stats` can change in every
+#' The check settings (`interval`, recheck) and `versions` / `stats` / `parquet_split` can change in every
 #' call; left `NULL`, they are those of the last call. [zenodo_update()] reruns a source from
 #' its stored arguments.
+#'
+#' @section Corpus:
+#' Built from the stored records after each call (also when nothing changed; a changed
+#' `versions`, `stats` or `parquet_split` thus needs no download):
+#'
+#' - `<project_folder>/corpus/query=<name>/`, with a copy of the source's `_query.json` and
+#'   `_query.html`: one row per deposit (all versions of a Zenodo upload), from its newest
+#'   version, `id` = `zenodo:<concept record ID>`;
+#' - `<project_folder>/links/query=<name>/`: the links from Zenodo's related identifiers,
+#'   shaped like OpenAlex's links (see [zenodo_links()]).
+#'
+#' Each folder holds one `data.parquet`, or several files with `parquet_split`. A folder is
+#' replaced only when it is complete.
+#'
+#' Only Zenodo data is used; nothing is requested from OpenAlex. Fields Zenodo has no data
+#' for (`cited_by_count`, `topics`, ...) are absent.
+#'
+#' Mapped OpenAlex columns: `id`, `doi` (concept DOI, else record DOI), `title`,
+#' `display_name`, `abstract` (description as plain text), `publication_date`,
+#' `publication_year`, `type` (from the Zenodo resource type), `language` (ISO 639-1),
+#' `authorships` (creators; ORCID; affiliations with ROR IDs as `institutions`),
+#' `primary_location`, `open_access`, `keywords` (subjects), `funders`, `awards`, `biblio`,
+#' `referenced_works` (deposits of the same source cited according to the related
+#' identifiers), `ids`, `created_date`, `updated_date`. Zenodo extras as `zenodo_*`
+#' columns: record and concept IDs and DOIs, version and all versions, resource type,
+#' publisher, licence, access, communities, related identifiers as declared, free-text
+#' references, files, and (as JSON text) contributors, locations, dates, additional
+#' descriptions, alternative identifiers and Software Heritage IDs.
 #'
 #' @param community Zenodo community (the `<id>` in `zenodo.org/communities/<id>`).
 #' @param query Zenodo search string (as on zenodo.org, e.g. `"bats AND switzerland"`).
@@ -51,12 +79,23 @@
 #' @param project_folder Project folder.
 #' @param name Name of the source within the project folder.
 #' @param full Download everything again; also needed to change the arguments of `name`.
-#' @param versions,stats,parquet_split As in [zenodo_build()]; `NULL`: as last time (first
-#'   time `"latest"`, `FALSE`, `"none"`). `parquet_split` also sets how `raw/` is split: one
-#'   folder per period (`"year"`, `"quarter"`, `"month"`) of each record's creation date, else
-#'   one folder per year (with files of about that many records for a number).
+#' @param versions `"latest"`: one row per deposit, from its newest version; `"all"`: one
+#'   row per version, `id` = `zenodo:<record ID>`. Links are always between deposits.
+#'   `NULL`: as last time (first time `"latest"`).
+#' @param stats `TRUE` adds Zenodo's views and downloads (`zenodo_stats`) and the time they
+#'   were downloaded (`zenodo_stats_date`). They grow daily without changing a record, so they
+#'   are only as recent as the record's last download. `NULL`: as last time (first time
+#'   `FALSE`).
+#' @param parquet_split How the files are split, for big sources (as `compact_parquet` in
+#'   `openalexPro::pro_fetch()`): `"none"` one `data.parquet`; `"year"`, `"quarter"` or
+#'   `"month"` one file per period of the deposit's Zenodo creation date (`2024.parquet`,
+#'   `2024-Q1.parquet`, `2024-03.parquet`); a number, e.g. `250000`, files of about that many
+#'   works (`part_0.parquet`, ...; approximate: DuckDB writes rows in groups of at least
+#'   ~2,048, so small numbers give larger files). Links are split by the creation date of the
+#'   deposit that declared them. `raw/` has one folder per period (or per year, for `"none"`
+#'   and numbers). `NULL`: as last time (first time `"none"`).
 #'
-#' @return Invisibly, the paths of the corpus and link files (as [zenodo_build()]).
+#' @return Invisibly, the corpus and link folders.
 #' @export
 zenodo_fetch <- function(community = NULL, query = NULL, ids = NULL, communities = NULL,
                          resource_type = NULL, from = NULL, to = NULL, interval = NULL,
