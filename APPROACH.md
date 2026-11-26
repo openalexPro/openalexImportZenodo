@@ -33,7 +33,7 @@ on-request download, as in openalexImportPolicy).
 | Reused from | What |
 |---|---|
 | **zenodo-openalex-collection** (`~/GitHub/zenodo-openalex-collection`) | The whole download/update core: `zenodo_get()` (throttle 2.2 s, 429 handling via `x-ratelimit-reset`, token for 100/page), `zenodo_buckets()` / `check_zenodo()` (count per interval, re-download changed intervals), rolling `recheck`, `fetch_zenodo_range()` (bisection under the 10,000-hit cap), atomic replace via `<dir>.tmp`, `zenodo_deposit()` (concept DOI or record DOI). **Copy** this code into the package; zenodo-openalex-collection stays as it is and keeps working on its own. Whether it later switches to depending on this package is a separate decision. |
-| **openalexImportPolicy** | Package shape: data folder outside the repo, `<prefix>_config()` settings order (option > env > config file > default), `fetch → build → corpus`, `<source>_<field>` extra columns, `write_corpus()` with `.part` + replace, DuckDB for mapping. |
+| **openalexImportPolicy** | Package shape: `fetch → build → corpus`, `<source>_<field>` extra columns, `write_corpus()` with `.part` + replace, DuckDB for mapping. |
 | **openalexPro** | Output layout (`query=<name>/` hive partitions, `_dataset.json` marker when that lands); the corpus must read like any openalexPro download. |
 | **openalexAPI** | The corpus contract: works files with `id` + `title`/`display_name`, deduplicated on `id_key(id)` (part after the last `/`, uppercased), extra columns served as they are, `cites:` filter reads `referenced_works`. |
 
@@ -47,24 +47,31 @@ into the corpus.
 
 ## 3. Inputs: sources
 
-One named entry per source, same style as zenodo-openalex-collection's `config.yml`, so one
-config can drive both:
+Plain R arguments, no config file. As in openalexPro (`pro_fetch()`, `pro_collection()`),
+every function takes a **`project_folder`** and a **`name`** (default `"zenodo"`). `name`
+identifies one source inside the project folder (sub-folder and partition name); each call
+says what it is — exactly one of `community`, `query` or `ids`:
 
-```yaml
-ipbes:
-  community: ipbes                 # zenodo.org/communities/<this>  (one of community / query / ids)
-  from: ~                          # Zenodo `created` range, optional
-  to: ~
-  interval: year                   # week, month, quarter, year, all
-  recheck: {interval: month, per_run: 2}
-bats_ch:
-  query: 'bats AND switzerland'    # Zenodo search syntax (Elasticsearch query string)
-  communities: [ipbes, biosphere]  # optional restriction
-  resource_type: [publication, dataset]   # optional
-  interval: all
-assessment_refs:
-  ids: [10.5281/zenodo.3831673, 7654321]  # DOIs or record IDs; refreshed as one bucket
+```r
+zenodo_fetch(community = "ipbes", project_folder = "proj",   # name = "zenodo"
+             interval = "year", recheck_interval = "month", recheck_per_run = 2)
+zenodo_fetch(query = "bats AND switzerland", project_folder = "proj", name = "bats_ch",
+             communities = c("ipbes", "biosphere"), resource_type = c("publication", "dataset"),
+             interval = "all")
+zenodo_fetch(ids = c("10.5281/zenodo.3831673", "7654321"), project_folder = "proj",
+             name = "assessment_refs")
 ```
+
+Optional for all: `from`, `to` (Zenodo `created` range), `interval` (week, month, quarter,
+year, all; default year), `recheck_interval` + `recheck_per_run` (rolling recheck),
+`full = FALSE`. Several sources = several calls (or `lapply()` / a targets pipeline in the
+user's project).
+
+The arguments of the first download are stored in `raw/<name>/_state.json`. A later call
+for the same `name` with different query arguments stops with an error (use `full = TRUE`
+to redefine it), so an update cannot silently mix two queries.
+`zenodo_update(project_folder, name)` reruns a source from its stored arguments; with
+`name = NULL`, all sources in `project_folder`.
 
 - **Community** → `GET /api/communities/<id>/records?allversions=true` (as now).
 - **Search** → `GET /api/records?q=<query> AND created:[from TO to}&allversions=true`,
@@ -94,7 +101,7 @@ Do the same:
   (decided 2026-11-25, Q1).
 
 The same deposit can sit in several sources (two communities, a community and a search).
-The corpus is partitioned per source (`query=<source>/`) like openalexPro, so a deposit can
+The corpus is partitioned per source (`query=<name>/`) like openalexPro, so a deposit can
 appear in two partitions; openalexAPI deduplicates on `id`. Add `zenodo_sources` (which
 sources the deposit was found in) when writing a combined corpus.
 
@@ -103,13 +110,13 @@ sources the deposit was found in) when writing a combined corpus.
 ## 5. Data layout
 
 ```
-<data>/
-  raw/<source>/<bucket>/*.parquet     every version; id columns + `json` (the full hit, verbatim)
-  raw/<source>/_state.json            last run (UTC), last successful `updated` watermark, recheck position
-  raw/<source>/changes.json           last change (as zenodo_changes.json now)
-  corpus/query=<source>/data.parquet  dataset 1: the works (deposits), OpenAlex schema + zenodo_* columns
+<project_folder>/
+  raw/<name>/<bucket>/*.parquet     every version; id columns + `json` (the full hit, verbatim)
+  raw/<name>/_state.json            source arguments, last run (UTC), `updated` watermark, recheck position
+  raw/<name>/changes.json           last change (as zenodo_changes.json now)
+  corpus/query=<name>/data.parquet  dataset 1: the works (deposits), OpenAlex schema + zenodo_* columns
   corpus/_dataset.json                marker (deterministic; see openalexPro discussion)
-  related/query=<source>/data.parquet dataset 2: the edges, one row per relation (section 9)
+  related/query=<name>/data.parquet dataset 2: the edges, one row per relation (section 9)
   files/<recid>/<key>                 on request only (zenodo_download_files())
 ```
 
@@ -230,7 +237,7 @@ relations), `fwci`, `citation_normalized_percentile`.
 | `zenodo_related` | `metadata.related_identifiers` | **list of struct**, normalised and resolved (section 9) |
 | `zenodo_references` | `metadata.references` | free-text reference strings (no IDs); candidates for later matching |
 | `zenodo_communities` | `metadata.communities[].id` | community membership — essential for filtering |
-| `zenodo_sources` | this package | which configured sources found the deposit |
+| `zenodo_sources` | this package | which sources found the deposit |
 | `zenodo_contributors` | `metadata.contributors[]` | name, affiliation, orcid, `type` (Editor, DataCollector, …); not authors |
 | `zenodo_files` | `files[]` | key, size, checksum, url; basis for `zenodo_download_files()` |
 | `zenodo_access_right`, `zenodo_embargo_date`, `zenodo_license` | metadata | raw access info |
@@ -319,17 +326,17 @@ so a query from either side finds it. A small `inst/extdata/relations.csv`
 ## 10. Exported API (sketch)
 
 ```r
-zenodo_config() / zenodo_config_set()       # data folder, token, defaults (policy_config pattern)
-zenodo_fetch(source, full = FALSE)          # download / update raw (section 6)
-zenodo_build(source, versions = "latest", stats = FALSE)
+zenodo_fetch(community = , query = , ids = , ..., project_folder, name = "zenodo", full = FALSE)
+                                            # download / update raw (sections 3, 6)
+zenodo_build(project_folder, name = "zenodo", versions = "latest", stats = FALSE)
                                             # map (Zenodo only) + related -> corpus, related
-zenodo_update(source, ...)                  # fetch + build
-zenodo_as_corpus(dir, source, ...)          # subset export, as policy_as_corpus()
-zenodo_related(source)                      # the edge table as data frame / dataset
-zenodo_download_files(ids, pattern = "\\.pdf$")   # on request
+zenodo_update(project_folder, name = NULL, ...)  # fetch (stored arguments) + build
+zenodo_as_corpus(project_folder, out, name = NULL, ...)  # subset export, as policy_as_corpus()
+zenodo_related(project_folder, name = NULL)  # the edge table as data frame / dataset
+zenodo_download_files(project_folder, ids, pattern = "\\.pdf$")  # on request
 ```
 
-Credentials: `API_zenodo_ro` only (keyring/env, as now; 100 instead of 25 per page). No
+Credentials: `API_zenodo_ro` only (keyring or environment variable, as now; 100 instead of 25 per page). No
 OpenAlex key needed for the import.
 
 Tests: no network (fixtures of saved hits; `file://` / mocked `httr2`), as in both siblings;
