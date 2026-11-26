@@ -116,24 +116,33 @@ sources the deposit was found in) when writing a combined corpus.
   raw/<name>/changes.json           last change (as zenodo_changes.json now)
   corpus/query=<name>/data.parquet  dataset 1: the works (deposits), OpenAlex schema + zenodo_* columns
   corpus/_dataset.json                marker (deterministic; see openalexPro discussion)
-  related/query=<name>/data.parquet dataset 2: the edges, one row per relation (section 9)
+  links/query=<name>/data.parquet   dataset 2: the links, one row per link (section 9)
   files/<recid>/<key>                 on request only (zenodo_download_files())
 ```
 
 So the output is **two parquet datasets**: `corpus/` (one row per deposit — what openalexAPI
-serves and every openalexPro package reads) and `related/` (one row per relation between a
-deposit and another output). They join on `corpus.id = related.from_id` (and
-`related.target_id` for the other end). `related/` is deliberately **outside** `corpus/`:
-openalexAPI reads every `*.parquet` below the corpus folder, and the edge table is not a
-works file. The relations are also in the works rows (`zenodo_related` list column); the
-edge table is the same information flattened, plus resolved targets and inverse edges, so
-graph questions ("all datasets that supplement a paper in this community") are a plain
-DuckDB query instead of unnesting lists.
+serves and every openalexPro package reads) and `links/` (one row per link between a
+deposit and another output, shaped like OpenAlex's `/links` entity). They join on
+`corpus.id = links.origin` or `links.target`. `links/` is deliberately **outside**
+`corpus/`: openalexAPI reads every `*.parquet` below the corpus folder, and the link table
+is not a works file. The relations are also in the works rows (`zenodo_related` list
+column); the link table is the same information flattened, resolved and oriented, so graph
+questions ("all datasets that supplement a paper in this community") are a plain DuckDB
+query instead of unnesting lists.
 
 **Important change vs. zenodo-openalex-collection:** keep the **full JSON of each hit** in
 the raw parquet (`json` VARCHAR), not only the selected columns. Then remapping (new fields,
 fixed mapping) never needs a re-download — the expensive part at 30 requests/minute.
-Size is modest (~3–10 kB per record).
+An InvenioRDM hit is ~35 kB as JSON (IPBES: ~35 MB; a 250,000-record community ≈ 9 GB
+before parquet compression).
+
+**`select`** (argument of `zenodo_fetch()`, default `NULL` = everything): Zenodo ignores
+field selection (`fields=` returns the full record, checked 2026-11-26), so `select` does
+not make downloads smaller; it only limits what is stored in `json`. It takes top-level or
+dotted paths (`"metadata.title"`, `"metadata.related_identifiers"`); the ID columns are
+always kept. It is stored in `_state.json`; changing it needs `full = TRUE`, because fields
+not stored can only come back by downloading again. `zenodo_build()` treats missing fields
+as empty.
 
 ---
 
@@ -186,7 +195,7 @@ a separate function or elsewhere. Notes for then, so the import does not block i
   (`isIdenticalTo` / `isAlternateIdentifier` / `isVersionOf`); Zenodo deposits are mostly in
   OpenAlex's **expansion** corpus; ~1 credit per 200 works (zenodo-openalex-collection).
 - Result: `ids.openalex` = `https://openalex.org/W…`; resolve external DOI targets in the
-  edge table to `W…`; optionally fill fields Zenodo lacks, with an option
+  link table to `W…`; optionally fill fields Zenodo lacks, with an option
   `openalex_overwrites_zenodo = FALSE` (default) deciding fields both have — Zenodo value
   kept unless `TRUE`.
 - It reads the import's output and writes a separate result; the import never depends on it.
@@ -262,24 +271,33 @@ of an assessment, the data a figure is derived from. For IPBES-type communities 
 the most valuable information Zenodo has and OpenAlex mostly lacks. Each entry:
 `identifier`, `relation`, `scheme`, `resource_type` (already parsed in `zenodo_records()`).
 
-### 9.1 Storage: column + edge table
+### 9.1 Storage: column + link table
 
-1. **`zenodo_related`** (list column on the work): everything, normalised, for users who
-   look at one work.
-2. **`related/`** (edge table: a second parquet dataset next to `corpus/`, one row per
-   relation), for graph work, joins and snowballing:
+1. **`zenodo_related`** (list column on the work): everything as declared, normalised, for
+   users who look at one work.
+2. **`links/`** (a second parquet dataset next to `corpus/`, one row per link), shaped like
+   OpenAlex's links entity (`api.openalex.org/links?filter=target:W…` → `origin`, `target`,
+   `link_type`), for graph work, joins and snowballing:
 
 | Column | Content |
 |---|---|
-| `from_id` | corpus `id` of the deposit |
-| `from_recid` | Zenodo record (version) the relation was declared on |
-| `relation` | DataCite relation, original casing (`isSupplementTo`) |
-| `relation_group` | `citation`, `supplement`, `part`, `version`, `derivation`, `documentation`, `identity`, `review`, `other` |
-| `direction` | `out` (declared) / `in` (inverse added by us) |
-| `scheme`, `identifier` | normalised (below) |
+| `origin`, `target` | `zenodo:<conceptrecid>` for Zenodo deposits, else the normalised identifier (`https://doi.org/…`, URL, …) |
+| `link_type` | OpenAlex link-type URL (`https://openalex.org/link-types/citation`, …) where the relation maps, else NA |
+| `relation` | DataCite relation as declared in Zenodo (`isSupplementTo`) |
+| `scheme` | scheme of the external identifier |
 | `target_type` | `resource_type` from Zenodo (e.g. `publication-article`) |
-| `target_id` | `zenodo:<conceptrecid>` if the target is a corpus deposit, else NA (a later OpenAlex enrichment may fill `W…`) |
-| `target_in_corpus` | logical |
+| `origin_in_corpus`, `target_in_corpus` | logical |
+| `declared_on` | Zenodo record (version) the relation was declared on |
+
+OpenAlex's link types (checked 2026-11-26, each mapped to DataCite terms): `citation`
+(Cites, References), `part`, `component`, `data-series` (IsPartOf), `volume`
+(IsPublishedIn), `review` (Reviews), `summary` (IsDerivedFrom, broad), `translation`
+(IsTranslationOf), `withdrawal` (Withdrawn), `retraction`, `removal`.
+
+**Orientation follows OpenAlex**: one row per link, in the direction "origin does X to
+target". Relations Zenodo declares the other way round are flipped: `A isCitedBy B` →
+origin B, target A, `citation`; `A hasPart B` → origin B, target A, `part`. So a link is
+stored once, whichever side declared it, and no inverse rows are needed.
 
 ### 9.2 Normalisation
 
@@ -288,7 +306,7 @@ the most valuable information Zenodo has and OpenAlex mostly lacks. Each entry:
 - Zenodo DOIs (`10.5281/zenodo.<n>`): resolve locally to the deposit (record DOI → concept),
   so a relation to *a version* points to *the deposit*.
 - arXiv → `10.48550/arXiv.<id>`; PMID, ISBN, handle, URL kept as they are.
-- Duplicate relations across versions of one deposit collapse into one edge (keep the
+- Duplicate relations across versions of one deposit collapse into one link (keep the
   newest `from_recid`).
 
 ### 9.3 Resolution
@@ -303,22 +321,20 @@ enrichment (section 7). Zenodo targets outside the corpus can optionally be fetc
 
 | Relation | Into |
 |---|---|
-| `cites`, `references` | `referenced_works` (`zenodo:` IDs of cited deposits in the corpus). This makes openalexAPI's `cites:` filter and openalexSnowball see these links; cited works outside the corpus stay in `zenodo_related` / the edge table |
-| `isCitedBy`, `isReferencedBy` | not into the other work's row; edge table only (`direction = in` on the target if it is in the corpus); a `zenodo_cited_by` list column on the deposit |
-| `isVersionOf`, `hasVersion`, `isNewVersionOf`, `isPreviousVersionOf` | dropped from edges between versions of the same deposit (covered by `zenodo_versions`); kept when they point outside the deposit (e.g. preprint ↔ published version) — used for matching (section 7) |
+| `cites`, `references` | `referenced_works` (`zenodo:` IDs of cited deposits in the corpus). This makes openalexAPI's `cites:` filter and openalexSnowball see these links; cited works outside the corpus stay in `zenodo_related` / the link table |
+| `isCitedBy`, `isReferencedBy` | flipped to `citation` links from the citing work; if that work is a corpus deposit, it also goes into its `referenced_works` |
+| `isVersionOf`, `hasVersion`, `isNewVersionOf`, `isPreviousVersionOf` | dropped from links between versions of the same deposit (covered by `zenodo_versions`); kept when they point outside the deposit (e.g. preprint ↔ published version) — used for matching (section 7) |
 | `isIdenticalTo`, `isAlternateIdentifier` | `ids` and OpenAlex matching |
-| `isSupplementTo`/`isSupplementedBy`, `isPartOf`/`hasPart`, `isDerivedFrom`/`isSourceOf`, `isDocumentedBy`/`documents`, `isDescribedBy`/`describes`, `compiles`/`isCompiledBy`, `requires`/`isRequiredBy`, `reviews`/`isReviewedBy`, `isPublishedIn`, `obsoletes`/`isObsoletedBy`, `isTranslationOf`/`hasTranslation`, … | `zenodo_related` + edge table only |
+| `isSupplementTo`/`isSupplementedBy`, `isPartOf`/`hasPart`, `isDerivedFrom`/`isSourceOf`, `isDocumentedBy`/`documents`, `isDescribedBy`/`describes`, `compiles`/`isCompiledBy`, `requires`/`isRequiredBy`, `reviews`/`isReviewedBy`, `isPublishedIn`, `obsoletes`/`isObsoletedBy`, `isTranslationOf`/`hasTranslation`, … | `zenodo_related` + link table only |
 
-Inverse completion: for every edge whose target is in the corpus, add the inverse
-(`isSupplementTo` ↔ `isSupplementedBy`, `hasPart` ↔ `isPartOf`, …) with `direction = in`,
-so a query from either side finds it. A small `inst/extdata/relations.csv`
-(relation, inverse, group, maps_to) holds the whole vocabulary — one place to change.
+A small `inst/extdata/relations.csv` (relation, active form, flip, link_type) holds the
+whole vocabulary — one place to change.
 
 ### 9.5 Later
 
 - `zenodo_expand(relation = …, depth = 1)`: fetch related Zenodo records that are not in
   any source (e.g. datasets supplementing community papers) into a source `expanded`.
-- Hand the edge table to openalexSnowball as an extra edge source.
+- Hand the link table to openalexSnowball as an extra link source.
 - Match `zenodo_references` (free text) to OpenAlex — only if needed; costly and fuzzy.
 
 ---
@@ -326,13 +342,14 @@ so a query from either side finds it. A small `inst/extdata/relations.csv`
 ## 10. Exported API (sketch)
 
 ```r
-zenodo_fetch(community = , query = , ids = , ..., project_folder, name = "zenodo", full = FALSE)
+zenodo_fetch(community = , query = , ids = , ..., select = NULL, project_folder, name = "zenodo", full = FALSE)
                                             # download / update raw (sections 3, 6)
 zenodo_build(project_folder, name = "zenodo", versions = "latest", stats = FALSE)
-                                            # map (Zenodo only) + related -> corpus, related
+                                            # map (Zenodo only) -> corpus, links
 zenodo_update(project_folder, name = NULL, ...)  # fetch (stored arguments) + build
 zenodo_as_corpus(project_folder, out, name = NULL, ...)  # subset export, as policy_as_corpus()
-zenodo_related(project_folder, name = NULL)  # the edge table as data frame / dataset
+zenodo_links(project_folder, name = NULL, origin = NULL, target = NULL, link_type = NULL)
+                                            # the link table, filtered as /links?filter=…
 zenodo_download_files(project_folder, ids, pattern = "\\.pdf$")  # on request
 ```
 
@@ -350,9 +367,9 @@ the offline pipeline tests of zenodo-openalex-collection (`tests/test_offline.R`
    original stays untouched), add search and ID sources, keep full `json`, `updated`
    watermark.
 2. **v0.2 — corpus**: mapping tables (types, languages, licences, relations), Zenodo-only
-   corpus, `zenodo_related`, edge table, `referenced_works` from relations, inverse
-   edges, `zenodo_as_corpus()`; check it with openalexAPI.
-3. Later: `zenodo_expand()`, file download, openalexSnowball edge input, OpenAlex
+   corpus, `zenodo_related`, link table, `referenced_works` from relations,
+   `zenodo_as_corpus()`; check it with openalexAPI.
+3. Later: `zenodo_expand()`, file download, openalexSnowball link input, OpenAlex
    enrichment as a separate step (section 7).
 
 ---
