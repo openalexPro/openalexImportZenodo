@@ -54,6 +54,8 @@ zenodo_as_corpus <- function(project_folder, out, name = NULL) {
   if (length(miss <- setdiff(name, built))) {
     stop("Not built: ", toString(miss), "; run zenodo_fetch() first.", call. = FALSE)
   }
+  dir.create(file.path(out, "corpus"), recursive = TRUE, showWarnings = FALSE)
+  file.copy(file.path(project_folder, "corpus", "_dataset.json"), file.path(out, "corpus"), overwrite = TRUE)
   for (part in c("corpus", "links")) {
     for (n in name) {
       from <- file.path(project_folder, part, paste0("query=", n))
