@@ -37,7 +37,7 @@ work's \code{zenodo_related}.
 Columns: \code{origin}, \code{target}, \code{link_type} (OpenAlex link type URL, e.g.
 \verb{https://openalex.org/link-types/citation}, or \code{NA} for relations OpenAlex has no type
 for, such as \code{isSupplementTo}), \code{origin_in_corpus}, \code{target_in_corpus},
-\code{zenodo_relation} (DataCite relation in the stored direction), \code{zenodo_relation_declared}
+\code{relation} (DataCite relation type in the stored direction, e.g. \code{Cites}), \code{zenodo_relation_declared}
 (as declared on Zenodo), \code{zenodo_scheme} and \code{zenodo_related_type} (scheme and Zenodo
 resource type of the related identifier), \code{zenodo_declared_on} (Zenodo record ID of the
 version that declared it), \code{query} (source name).

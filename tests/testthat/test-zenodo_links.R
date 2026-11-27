@@ -14,16 +14,16 @@ test_that("links are oriented like OpenAlex, deduplicated and resolved", {
   pf <- local_project()
   quiet(zenodo_fetch(community = "c", project_folder = pf))
   l <- zenodo_links(pf)
-  key <- paste(l$origin, l$zenodo_relation, l$target)
+  key <- paste(l$origin, l$relation, l$target)
   expect_setequal(key, c(
-    "zenodo:10 cites zenodo:20",
-    "https://doi.org/10.1234/abc cites zenodo:10",
-    "zenodo:10 isSupplementTo https://doi.org/10.48550/arxiv.2101.00001",
-    "zenodo:20 isPartOf zenodo:10"))
-  cit <- l[l$zenodo_relation == "cites" & l$target == "zenodo:20", ]
+    "zenodo:10 Cites zenodo:20",
+    "https://doi.org/10.1234/abc Cites zenodo:10",
+    "zenodo:10 IsSupplementTo https://doi.org/10.48550/arxiv.2101.00001",
+    "zenodo:20 IsPartOf zenodo:10"))
+  cit <- l[l$relation == "Cites" & l$target == "zenodo:20", ]
   expect_equal(cit$link_type, "https://openalex.org/link-types/citation")
   expect_equal(cit$zenodo_declared_on, "12")
-  expect_true(is.na(l$link_type[l$zenodo_relation == "isSupplementTo"]))
+  expect_true(is.na(l$link_type[l$relation == "IsSupplementTo"]))
   expect_equal(nrow(zenodo_links(pf, link_type = "part")), 1)
   expect_equal(nrow(zenodo_links(pf, target = "zenodo:10")), 2)
   w <- arrow::read_parquet(file.path(pf, "corpus", "query=zenodo", "data.parquet"))

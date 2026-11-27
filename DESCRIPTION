@@ -22,12 +22,12 @@ Imports:
     duckdb,
     httr2,
     jsonlite,
+    openalexStandard,
     stats,
     utils
 Suggests:
     keyring,
     openalexAPI,
-    openalexStandard,
     testthat (>= 3.0.0),
     withr
 Remotes:

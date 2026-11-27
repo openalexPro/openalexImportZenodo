@@ -62,7 +62,7 @@ SELECT
   CASE WHEN flip THEN other ELSE 'zenodo:' || dep END AS origin,
   CASE WHEN flip THEN 'zenodo:' || dep ELSE other END AS target,
   link_type,
-  relation AS zenodo_relation,
+  upper(relation[1]) || relation[2:] AS relation,
   x.relation_type.id AS zenodo_relation_declared,
   scheme AS zenodo_scheme,
   x.resource_type.id AS zenodo_related_type,
@@ -97,7 +97,7 @@ link_schemes <- c("ark", "arxiv", "bibcode", "ean13", "eissn", "handle", "igsn",
 #' Columns: `origin`, `target`, `link_type` (OpenAlex link type URL, e.g.
 #' `https://openalex.org/link-types/citation`, or `NA` for relations OpenAlex has no type
 #' for, such as `isSupplementTo`), `origin_in_corpus`, `target_in_corpus`,
-#' `zenodo_relation` (DataCite relation in the stored direction), `zenodo_relation_declared`
+#' `relation` (DataCite relation type in the stored direction, e.g. `Cites`), `zenodo_relation_declared`
 #' (as declared on Zenodo), `zenodo_scheme` and `zenodo_related_type` (scheme and Zenodo
 #' resource type of the related identifier), `zenodo_declared_on` (Zenodo record ID of the
 #' version that declared it), `query` (source name).
