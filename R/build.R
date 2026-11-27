@@ -90,8 +90,17 @@ zenodo_build <- function(project_folder, name = "zenodo", versions = NULL, stats
   write_split(con, sprintf(
     "SELECT l.* EXCLUDE (dep, rank), %s AS zenodo_part FROM links l JOIN fc ON fc.conceptrecid = l.dep",
     part), links, split, "origin, target, relation")
+  write_dataset_marker(dirname(corpus))
   message(DBI::dbGetQuery(con, "SELECT count(*) AS n FROM fc")$n, " deposits -> ", corpus)
   invisible(c(corpus = corpus, links = links))
+}
+
+# `_dataset.json` of the corpus folder (openalexPro ecosystem standard, D1-D5): who wrote it,
+# how its ids look, and the fingerprint of the data. Written after the data; deterministic.
+write_dataset_marker <- function(dir) {
+  openalexStandard::write_dataset_json(
+    dir, "openalexImportZenodo", utils::packageVersion("openalexImportZenodo"), prefix = "zenodo",
+    id_format = "zenodo:<conceptrecid, or recid with versions = 'all'>")
 }
 
 # Records mapped per batch of the build (memory: about this many full records).

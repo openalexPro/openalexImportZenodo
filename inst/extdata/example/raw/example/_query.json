@@ -1,0 +1,38 @@
+{
+  "source": {
+    "community": "ipbes",
+    "query": null,
+    "ids": null,
+    "communities": null,
+    "resource_type": null,
+    "from": null,
+    "to": null,
+    "interval": "year",
+    "recheck": null,
+    "select": null
+  },
+  "zenodo_url": "https://zenodo.org/api/communities/ipbes/records",
+  "zenodo_query": "created:[* TO *}",
+  "zenodo_web_url": "https://zenodo.org/communities/ipbes/records?q=&all_versions=true",
+  "records": 1034,
+  "deposits": 567,
+  "requests": 25,
+  "started": "2026-11-26T13:05:28Z",
+  "finished": "2026-11-26T13:06:29Z",
+  "updated_watermark": "2026-11-26T13:05:28Z",
+  "recheck_last": null,
+  "last_change": {
+    "date": "2026-11-26T13:06:29Z",
+    "added_deposits": 567,
+    "removed_deposits": 0,
+    "added_records": 1034,
+    "removed_records": 0
+  },
+  "build": {
+    "versions": "latest",
+    "stats": false,
+    "parquet_split": "none"
+  },
+  "openalexImportZenodo": "0.0.0.9000",
+  "note": "Example: a few deposits of the IPBES community, see data-raw/example_corpus.R"
+}

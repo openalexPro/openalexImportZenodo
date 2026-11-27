@@ -14,3 +14,5 @@
 /ipbes_zenodo/
 _query.json
 _query.html
+# Example data shipped for zenodo_example_corpus() (see data-raw/example_corpus.R)
+!/inst/extdata/example/**

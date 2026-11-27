@@ -4,11 +4,14 @@
 # per link in the direction "origin does X to target": relations Zenodo declares the other
 # way round (isCitedBy, hasPart, ...) are flipped (relations.csv). Zenodo records and DOIs
 # that are deposits of the source become `zenodo:<concept record ID>`; other DOIs
-# `https://doi.org/<doi>` (arXiv IDs as their DataCite DOI); anything else stays as given.
+# `https://doi.org/<doi>` (arXiv IDs as their DataCite DOI, handles that are DOIs as DOIs);
+# URLs stay as given; anything else becomes `<scheme>:<identifier>` (ecosystem standard K4)
+# if the scheme is one of `link_schemes`, else the link is left out (it stays in the work's
+# `zenodo_related`). Extra columns carry the `zenodo_` prefix (S5, K1).
 # Relations between versions of one deposit are dropped; a link declared on several
 # versions (or by both sides) is kept once, from the newest declaration.
 build_links <- function(con) {
-  DBI::dbExecute(con, "
+  DBI::dbExecute(con, sprintf("
 CREATE TEMP TABLE links AS
 WITH ids AS (
   SELECT id AS recid, conceptrecid FROM rs
@@ -28,6 +31,7 @@ WITH ids AS (
     CASE
       WHEN scheme = 'arxiv' THEN '10.48550/arxiv.' || lower(regexp_replace(idn, '^arxiv:', '', 'i'))
       WHEN scheme = 'doi' OR regexp_matches(idn, '^(https?://(dx\\.)?doi\\.org/|doi:)10\\.', 'i')
+        OR (scheme = 'handle' AND regexp_matches(idn, '^10\\.[0-9]{4,}/'))
         THEN lower(regexp_replace(idn, '^(https?://(dx\\.)?doi\\.org/|doi:)', '', 'i'))
     END AS doi
   FROM n
@@ -42,7 +46,8 @@ WITH ids AS (
       WHEN ids.conceptrecid IS NOT NULL THEN 'zenodo:' || ids.conceptrecid
       WHEN doi IS NOT NULL THEN 'https://doi.org/' || doi
       WHEN nullif(zn, '') IS NOT NULL THEN 'https://doi.org/10.5281/zenodo.' || zn
-      ELSE idn
+      WHEN regexp_matches(idn, '^https?://', 'i') THEN idn
+      WHEN scheme IN (%s) THEN scheme || ':' || regexp_replace(idn, '^' || scheme || ':', '', 'i')
     END AS other
   FROM z LEFT JOIN ids ON ids.recid = nullif(z.zn, '')
 ), o AS (
@@ -51,27 +56,32 @@ WITH ids AS (
     coalesce(rl.flip, false) AS flip,
     CASE WHEN rl.link_type IS NOT NULL THEN 'https://openalex.org/link-types/' || rl.link_type END AS link_type
   FROM t LEFT JOIN relations rl ON rl.declared = t.declared
-  WHERE t.target_dep IS DISTINCT FROM t.dep
+  WHERE t.target_dep IS DISTINCT FROM t.dep AND t.other IS NOT NULL
 )
 SELECT
   CASE WHEN flip THEN other ELSE 'zenodo:' || dep END AS origin,
   CASE WHEN flip THEN 'zenodo:' || dep ELSE other END AS target,
   link_type,
-  relation,
-  x.relation_type.id AS relation_declared,
-  scheme,
-  x.resource_type.id AS related_type,
+  upper(relation[1]) || relation[2:] AS relation,
+  x.relation_type.id AS zenodo_relation_declared,
+  scheme AS zenodo_scheme,
+  x.resource_type.id AS zenodo_related_type,
   starts_with(CASE WHEN flip THEN other ELSE 'zenodo:' || dep END, 'zenodo:') AS origin_in_corpus,
   starts_with(CASE WHEN flip THEN 'zenodo:' || dep ELSE other END, 'zenodo:') AS target_in_corpus,
-  declared_on,
+  declared_on AS zenodo_declared_on,
   dep,
   row_number() OVER (
     PARTITION BY CASE WHEN flip THEN other ELSE 'zenodo:' || dep END,
                  CASE WHEN flip THEN 'zenodo:' || dep ELSE other END, relation
     ORDER BY version_index DESC NULLS LAST, created DESC) AS rank
 FROM o
-QUALIFY rank = 1")
+QUALIFY rank = 1", paste(sql_str(link_schemes), collapse = ", ")))
 }
+
+# Identifier schemes written as `<scheme>:<identifier>` (STANDARD.md I7, without doi/url,
+# which are written as URLs).
+link_schemes <- c("ark", "arxiv", "bibcode", "ean13", "eissn", "handle", "igsn", "isbn", "issn",
+                  "istc", "lissn", "lsid", "pmid", "purl", "upc", "urn", "w3id", "orcid", "ror")
 
 #' Links between Zenodo deposits and other works
 #'
@@ -79,14 +89,18 @@ QUALIFY rank = 1")
 #' identifiers, shaped like OpenAlex's links (`api.openalex.org/links`): `origin`,
 #' `target`, `link_type`, in the direction "origin does X to target" (a relation declared
 #' the other way round, such as `isCitedBy`, is flipped). Deposits of the source are
-#' `zenodo:<concept record ID>`, DOIs `https://doi.org/<doi>`.
+#' `zenodo:<concept record ID>`, DOIs `https://doi.org/<doi>`, other URLs as given, other
+#' identifiers `<scheme>:<identifier>` (e.g. `isbn:978...`), as the openalexPro ecosystem
+#' standard asks (K4). Related identifiers of other schemes are not links; they are in the
+#' work's `zenodo_related`.
 #'
 #' Columns: `origin`, `target`, `link_type` (OpenAlex link type URL, e.g.
 #' `https://openalex.org/link-types/citation`, or `NA` for relations OpenAlex has no type
-#' for, such as `isSupplementTo`), `relation` (DataCite relation in the stored direction),
-#' `relation_declared` (as declared on Zenodo), `scheme` and `related_type` (scheme and
-#' Zenodo resource type of the related identifier), `origin_in_corpus`, `target_in_corpus`,
-#' `declared_on` (Zenodo record ID of the version that declared it), `query` (source name).
+#' for, such as `isSupplementTo`), `origin_in_corpus`, `target_in_corpus`,
+#' `relation` (DataCite relation type in the stored direction, e.g. `Cites`), `zenodo_relation_declared`
+#' (as declared on Zenodo), `zenodo_scheme` and `zenodo_related_type` (scheme and Zenodo
+#' resource type of the related identifier), `zenodo_declared_on` (Zenodo record ID of the
+#' version that declared it), `query` (source name).
 #'
 #' @param project_folder Project folder.
 #' @param name Names of the sources; `NULL` for all.

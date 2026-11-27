@@ -2,6 +2,7 @@
 
 export(zenodo_api_key)
 export(zenodo_as_corpus)
+export(zenodo_example_corpus)
 export(zenodo_fetch)
 export(zenodo_links)
 export(zenodo_update)

@@ -28,13 +28,17 @@ Reads the link table written by \code{\link[=zenodo_fetch]{zenodo_fetch()}}: one
 identifiers, shaped like OpenAlex's links (\code{api.openalex.org/links}): \code{origin},
 \code{target}, \code{link_type}, in the direction "origin does X to target" (a relation declared
 the other way round, such as \code{isCitedBy}, is flipped). Deposits of the source are
-\verb{zenodo:<concept record ID>}, DOIs \verb{https://doi.org/<doi>}.
+\verb{zenodo:<concept record ID>}, DOIs \verb{https://doi.org/<doi>}, other URLs as given, other
+identifiers \verb{<scheme>:<identifier>} (e.g. \verb{isbn:978...}), as the openalexPro ecosystem
+standard asks (K4). Related identifiers of other schemes are not links; they are in the
+work's \code{zenodo_related}.
 }
 \details{
 Columns: \code{origin}, \code{target}, \code{link_type} (OpenAlex link type URL, e.g.
 \verb{https://openalex.org/link-types/citation}, or \code{NA} for relations OpenAlex has no type
-for, such as \code{isSupplementTo}), \code{relation} (DataCite relation in the stored direction),
-\code{relation_declared} (as declared on Zenodo), \code{scheme} and \code{related_type} (scheme and
-Zenodo resource type of the related identifier), \code{origin_in_corpus}, \code{target_in_corpus},
-\code{declared_on} (Zenodo record ID of the version that declared it), \code{query} (source name).
+for, such as \code{isSupplementTo}), \code{origin_in_corpus}, \code{target_in_corpus},
+\code{relation} (DataCite relation type in the stored direction, e.g. \code{Cites}), \code{zenodo_relation_declared}
+(as declared on Zenodo), \code{zenodo_scheme} and \code{zenodo_related_type} (scheme and Zenodo
+resource type of the related identifier), \code{zenodo_declared_on} (Zenodo record ID of the
+version that declared it), \code{query} (source name).
 }

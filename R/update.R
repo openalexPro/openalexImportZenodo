@@ -64,6 +64,8 @@ zenodo_as_corpus <- function(project_folder, out, name = NULL) {
       file.copy(from, to, recursive = TRUE)
     }
   }
+  # the selection has its own data, so its own fingerprint (D5)
+  if (dir.exists(file.path(out, "corpus"))) write_dataset_marker(file.path(out, "corpus"))
   invisible(out)
 }
 

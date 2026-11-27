@@ -16,17 +16,33 @@ test_that("links are oriented like OpenAlex, deduplicated and resolved", {
   l <- zenodo_links(pf)
   key <- paste(l$origin, l$relation, l$target)
   expect_setequal(key, c(
-    "zenodo:10 cites zenodo:20",
-    "https://doi.org/10.1234/abc cites zenodo:10",
-    "zenodo:10 isSupplementTo https://doi.org/10.48550/arxiv.2101.00001",
-    "zenodo:20 isPartOf zenodo:10"))
-  cit <- l[l$relation == "cites" & l$target == "zenodo:20", ]
+    "zenodo:10 Cites zenodo:20",
+    "https://doi.org/10.1234/abc Cites zenodo:10",
+    "zenodo:10 IsSupplementTo https://doi.org/10.48550/arxiv.2101.00001",
+    "zenodo:20 IsPartOf zenodo:10"))
+  cit <- l[l$relation == "Cites" & l$target == "zenodo:20", ]
   expect_equal(cit$link_type, "https://openalex.org/link-types/citation")
-  expect_equal(cit$declared_on, "12")
-  expect_true(is.na(l$link_type[l$relation == "isSupplementTo"]))
+  expect_equal(cit$zenodo_declared_on, "12")
+  expect_true(is.na(l$link_type[l$relation == "IsSupplementTo"]))
   expect_equal(nrow(zenodo_links(pf, link_type = "part")), 1)
   expect_equal(nrow(zenodo_links(pf, target = "zenodo:10")), 2)
   w <- arrow::read_parquet(file.path(pf, "corpus", "query=zenodo", "data.parquet"))
   expect_equal(w$referenced_works[[which(w$id == "zenodo:10")]], "zenodo:20")
   expect_length(w$referenced_works[[which(w$id == "zenodo:20")]], 0)
+})
+
+test_that("link ends outside the corpus are DOI, URL or <scheme>:<id> (ecosystem standard K4)", {
+  hits <- list(hit(10, 10, related = list(
+    rel("978-3-947851-03-4", "references", scheme = "isbn"),
+    rel("10.5281/zenodo.99", "references", scheme = "handle"),  # a DOI given as handle
+    rel("11234/5678", "references", scheme = "handle"),
+    rel("https://example.org/x", "references", scheme = "url"),
+    rel("something", "references", scheme = "other"))))       # no usable scheme: not a link
+  local_fake_zenodo(hits)
+  pf <- local_project()
+  quiet(zenodo_fetch(community = "c", project_folder = pf))
+  expect_setequal(zenodo_links(pf)$target, c(
+    "isbn:978-3-947851-03-4", "https://doi.org/10.5281/zenodo.99", "handle:11234/5678",
+    "https://example.org/x"))
+  expect_true(file.exists(file.path(pf, "corpus", "_dataset.json")))
 })
