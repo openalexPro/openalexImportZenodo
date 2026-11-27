@@ -10,9 +10,23 @@ zenodo_api_key()
 The token, or \code{NULL} if none is found.
 }
 \description{
-The default \code{api_key} of \code{\link[=zenodo_fetch]{zenodo_fetch()}} and \code{\link[=zenodo_update]{zenodo_update()}}: the environment
-variable \code{API_zenodo_ro}, else the keyring entry \code{API_zenodo_ro} (if the keyring package
-is installed). A token (no scopes needed, from
-\url{https://zenodo.org/account/settings/applications}) allows 100 instead of 25 records per
-request.
+The default \code{api_key} of \code{\link[=zenodo_fetch]{zenodo_fetch()}} and \code{\link[=zenodo_update]{zenodo_update()}}, looked up as
+\code{openalexPro::pro_api_key()} does, in this order:
+}
+\details{
+\enumerate{
+\item the R option \code{openalexImportZenodo$api_key}
+(\code{options(openalexImportZenodo = list(api_key = "..."))});
+\item the environment variable \code{openalexImportZenodo.api_key};
+\item the system keyring entry \code{API_zenodo} (if the keyring package is installed).
+}
+
+A token (no scopes needed, from \url{https://zenodo.org/account/settings/applications})
+allows 100 instead of 25 records per request.
+}
+\examples{
+\dontrun{
+keyring::key_set("API_zenodo")
+zenodo_api_key()
+}
 }

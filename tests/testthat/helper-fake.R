@@ -78,7 +78,7 @@ fake_zenodo <- function(hits) {
 # Use the fake for the rest of the calling test.
 local_fake_zenodo <- function(hits, env = parent.frame()) {
   z <- fake_zenodo(hits)
-  testthat::local_mocked_bindings(zenodo_get = z$get, api_key = function(name) "", .env = env)
+  testthat::local_mocked_bindings(zenodo_get = z$get, zenodo_api_key = function() NULL, .env = env)
   z
 }
 

@@ -435,8 +435,9 @@ zenodo_download_files(project_folder, ids, pattern = "\\.pdf$")  # on request
 ```
 
 Credentials: argument `api_key = zenodo_api_key()` of `zenodo_fetch()` and `zenodo_update()`, as
-`api_key = pro_api_key()` in openalexPro (decided 2026-11-27). `zenodo_api_key()` reads the
-environment variable or keyring entry `API_zenodo_ro`; `NULL` or `""` = anonymous (25 instead of 100
+`api_key = pro_api_key()` in openalexPro (decided 2026-11-27). `zenodo_api_key()` reads, as
+`pro_api_key()`, the R option `openalexImportZenodo$api_key`, the environment variable
+`openalexImportZenodo.api_key` or the keyring entry `API_zenodo`; `NULL` or `""` = anonymous (25 instead of 100
 per page). The key is used only for the call and never written to `_query.json`. No OpenAlex key
 needed for the import.
 

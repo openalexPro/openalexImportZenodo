@@ -1,26 +1,31 @@
 # Copied from zenodo-openalex-collection (R/api_key.R, R/zenodo_get.R); adapted.
 
-# Key from env var `name` (e.g. on CI), else from the system keyring service `name`, else "".
-api_key <- function(name) {
-  key <- Sys.getenv(name)
-  if (!nzchar(key) && requireNamespace("keyring", quietly = TRUE)) {
-    key <- tryCatch(keyring::key_get(name), error = function(e) "")
-  }
-  key
-}
-
 #' Zenodo token
 #'
-#' The default `api_key` of [zenodo_fetch()] and [zenodo_update()]: the environment
-#' variable `API_zenodo_ro`, else the keyring entry `API_zenodo_ro` (if the keyring package
-#' is installed). A token (no scopes needed, from
-#' <https://zenodo.org/account/settings/applications>) allows 100 instead of 25 records per
-#' request.
+#' The default `api_key` of [zenodo_fetch()] and [zenodo_update()], looked up as
+#' `openalexPro::pro_api_key()` does, in this order:
+#'
+#' 1. the R option `openalexImportZenodo$api_key`
+#'    (`options(openalexImportZenodo = list(api_key = "..."))`);
+#' 2. the environment variable `openalexImportZenodo.api_key`;
+#' 3. the system keyring entry `API_zenodo` (if the keyring package is installed).
+#'
+#' A token (no scopes needed, from <https://zenodo.org/account/settings/applications>)
+#' allows 100 instead of 25 records per request.
 #'
 #' @return The token, or `NULL` if none is found.
+#' @examples
+#' \dontrun{
+#' keyring::key_set("API_zenodo")
+#' zenodo_api_key()
+#' }
 #' @export
 zenodo_api_key <- function() {
-  key <- api_key("API_zenodo_ro")
+  key <- getOption("openalexImportZenodo")$api_key
+  if (is.null(key) || !nzchar(key)) key <- Sys.getenv("openalexImportZenodo.api_key")
+  if (!nzchar(key) && requireNamespace("keyring", quietly = TRUE)) {
+    key <- tryCatch(keyring::key_get("API_zenodo"), error = function(e) "")
+  }
   if (nzchar(key)) key
 }
 

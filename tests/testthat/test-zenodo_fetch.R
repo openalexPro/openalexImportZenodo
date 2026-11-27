@@ -212,3 +212,11 @@ test_that("api_key is used for the call only and never stored", {
   expect_true(length(seen) > 0 && all(seen == ""))
   expect_error(zenodo_fetch(community = "c", project_folder = pf, api_key = 1), "api_key")
 })
+
+test_that("zenodo_api_key() looks up option, then env var, as pro_api_key()", {
+  withr::local_options(openalexImportZenodo = list(api_key = "from-option"))
+  withr::local_envvar(openalexImportZenodo.api_key = "from-env")
+  expect_equal(zenodo_api_key(), "from-option")
+  withr::local_options(openalexImportZenodo = NULL)
+  expect_equal(zenodo_api_key(), "from-env")
+})

@@ -34,8 +34,10 @@ pak::pak("openalexPro/openalexImportZenodo@dev")
 A Zenodo token (no scopes needed, from
 [zenodo.org/account/settings/applications](https://zenodo.org/account/settings/applications))
 allows 100 instead of 25 records per request. `zenodo_fetch()` and `zenodo_update()` take it as
-`api_key`; the default, `zenodo_api_key()`, reads the environment variable or keyring entry
-`API_zenodo_ro`. `api_key = NULL` downloads anonymously.
+`api_key`; the default, `zenodo_api_key()`, reads, as `openalexPro::pro_api_key()` does,
+the R option `openalexImportZenodo$api_key`, the environment variable
+`openalexImportZenodo.api_key` or the keyring entry `API_zenodo`
+(`keyring::key_set("API_zenodo")`). `api_key = NULL` downloads anonymously.
 
 ## Use
 

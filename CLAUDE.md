@@ -20,7 +20,7 @@ zenodo_update() =  zenodo_fetch() with the stored arguments (incl. versions / st
 
 | File | Role |
 |---|---|
-| `R/api.R` | `zenodo_get()` (InvenioRDM `Accept` header, throttle 2.2 s, 429 handling); token: `zenodo_api_key()` (`API_zenodo_ro`), set per `zenodo_fetch()` call from its `api_key` |
+| `R/api.R` | `zenodo_get()` (InvenioRDM `Accept` header, throttle 2.2 s, 429 handling); token: `zenodo_api_key()` (option / env var `openalexImportZenodo.api_key` / keyring `API_zenodo`, as `pro_api_key()`), set per `zenodo_fetch()` call from its `api_key` |
 | `R/intervals.R` | interval maths, copied unchanged from zenodo-openalex-collection |
 | `R/source.R` | argument validation (`zenodo_source()`), query strings, URLs, ID resolution |
 | `R/raw.R` | count check (stored counts by `created`, any interval), range download with bisection, merge into part folders (year, or `parquet_split` period) in one partitioned COPY, `updated` upsert, layout conversion |
