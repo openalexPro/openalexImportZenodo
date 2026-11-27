@@ -21,7 +21,8 @@ zenodo_fetch(
   full = FALSE,
   versions = NULL,
   stats = NULL,
-  parquet_split = NULL
+  parquet_split = NULL,
+  api_key = zenodo_api_key()
 )
 }
 \arguments{
@@ -76,6 +77,9 @@ works (\code{part_0.parquet}, ...; approximate: DuckDB writes rows in groups of 
 ~2,048, so small numbers give larger files). Links are split by the creation date of the
 deposit that declared them. \verb{raw/} has one folder per period (or per year, for \code{"none"}
 and numbers). \code{NULL}: as last time (first time \code{"none"}).}
+
+\item{api_key}{Zenodo token (no scopes needed); default \code{\link[=zenodo_api_key]{zenodo_api_key()}}. \code{NULL} or
+\code{""}: anonymous. Used only for this call, never stored.}
 }
 \value{
 Invisibly, the corpus and link folders.
@@ -101,8 +105,7 @@ replace their stored copies.
 }
 
 Zenodo allows 30 search requests per minute; requests are spaced at 2.2 s. With a Zenodo
-token (environment variable or keyring entry \code{API_zenodo_ro}, no scopes needed) a page
-has 100 instead of 25 records. Zenodo returns at most 10,000 records per search; larger
+token (\code{api_key}) a page has 100 instead of 25 records. Zenodo returns at most 10,000 records per search; larger
 intervals are split automatically.
 
 The arguments are stored in \verb{raw/<name>/_query.json} together with the last run; the

@@ -17,8 +17,7 @@
 #'   replace their stored copies.
 #'
 #' Zenodo allows 30 search requests per minute; requests are spaced at 2.2 s. With a Zenodo
-#' token (environment variable or keyring entry `API_zenodo_ro`, no scopes needed) a page
-#' has 100 instead of 25 records. Zenodo returns at most 10,000 records per search; larger
+#' token (`api_key`) a page has 100 instead of 25 records. Zenodo returns at most 10,000 records per search; larger
 #' intervals are split automatically.
 #'
 #' The arguments are stored in `raw/<name>/_query.json` together with the last run; the
@@ -78,6 +77,8 @@
 #'   not download time.
 #' @param project_folder Project folder.
 #' @param name Name of the source within the project folder.
+#' @param api_key Zenodo token (no scopes needed); default [zenodo_api_key()]. `NULL` or
+#'   `""`: anonymous. Used only for this call, never stored.
 #' @param full Download everything again; also needed to change the arguments of `name`.
 #' @param versions `"latest"`: one row per deposit, from its newest version; `"all"`: one
 #'   row per version, `id` = `zenodo:<record ID>`. Links are always between deposits.
@@ -101,8 +102,12 @@ zenodo_fetch <- function(community = NULL, query = NULL, ids = NULL, communities
                          resource_type = NULL, from = NULL, to = NULL, interval = NULL,
                          recheck_interval = NULL, recheck_per_run = NULL, select = NULL,
                          project_folder, name = "zenodo", full = FALSE,
-                         versions = NULL, stats = NULL, parquet_split = NULL) {
+                         versions = NULL, stats = NULL, parquet_split = NULL,
+                         api_key = zenodo_api_key()) {
   check_name(name)
+  prev_key <- .token$key
+  .token$key <- check_api_key(api_key)
+  on.exit(.token$key <- prev_key, add = TRUE)
   dir <- file.path(project_folder, "raw", name)
   rec_file <- file.path(dir, "_query.json")
   old <- if (file.exists(rec_file)) jsonlite::read_json(rec_file, simplifyVector = TRUE)

@@ -4,7 +4,12 @@
 \alias{zenodo_update}
 \title{Update sources}
 \usage{
-zenodo_update(project_folder, name = NULL, interval = NULL)
+zenodo_update(
+  project_folder,
+  name = NULL,
+  interval = NULL,
+  api_key = zenodo_api_key()
+)
 }
 \arguments{
 \item{project_folder}{Project folder.}
@@ -12,6 +17,8 @@ zenodo_update(project_folder, name = NULL, interval = NULL)
 \item{name}{Names of the sources; \code{NULL} (default) for all sources in \code{project_folder}.}
 
 \item{interval}{Check interval for this update (see \code{\link[=zenodo_fetch]{zenodo_fetch()}}); \code{NULL}: as last time.}
+
+\item{api_key}{Zenodo token, as in \code{\link[=zenodo_fetch]{zenodo_fetch()}}.}
 }
 \value{
 Invisibly, the names of the sources updated.

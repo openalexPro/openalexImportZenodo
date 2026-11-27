@@ -434,8 +434,11 @@ zenodo_links(project_folder, name = NULL, origin = NULL, target = NULL, link_typ
 zenodo_download_files(project_folder, ids, pattern = "\\.pdf$")  # on request
 ```
 
-Credentials: `API_zenodo_ro` only (keyring or environment variable, as now; 100 instead of 25 per page). No
-OpenAlex key needed for the import.
+Credentials: argument `api_key = zenodo_api_key()` of `zenodo_fetch()` and `zenodo_update()`, as
+`api_key = pro_api_key()` in openalexPro (decided 2026-11-27). `zenodo_api_key()` reads the
+environment variable or keyring entry `API_zenodo_ro`; `NULL` or `""` = anonymous (25 instead of 100
+per page). The key is used only for the call and never written to `_query.json`. No OpenAlex key
+needed for the import.
 
 Tests: no network (fixtures of saved hits; `file://` / mocked `httr2`), as in both siblings;
 the offline pipeline tests of zenodo-openalex-collection (`tests/test_offline.R`) are copied in.

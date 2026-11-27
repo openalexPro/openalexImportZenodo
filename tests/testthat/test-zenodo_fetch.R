@@ -192,3 +192,23 @@ test_that("an interrupted first download keeps what it has and resumes", {
   expect_equal(sort(zenodo_id_table(dir)$id), c("11", "21"))
   expect_false(is.null(jsonlite::read_json(file.path(dir, "_query.json"))$finished))
 })
+
+test_that("api_key is used for the call only and never stored", {
+  z <- local_fake_zenodo(hits3())
+  seen <- character()
+  get <- z$get
+  local_mocked_bindings(zenodo_get = function(url, ...) {
+    seen <<- c(seen, zenodo_token())
+    get(url, ...)
+  })
+  pf <- local_project()
+  quiet(zenodo_fetch(community = "c", from = "2023-01-01", to = "2025-01-01",
+                     project_folder = pf, api_key = "secret-token"))
+  expect_true(length(seen) > 0 && all(seen == "secret-token"))
+  expect_false(any(grepl("secret-token", readLines(file.path(pf, "raw", "zenodo", "_query.json")))))
+  expect_equal(zenodo_token(), "") # restored: the mocked keyring has no key
+  seen <- character()
+  quiet(zenodo_update(pf, api_key = NULL))
+  expect_true(length(seen) > 0 && all(seen == ""))
+  expect_error(zenodo_fetch(community = "c", project_folder = pf, api_key = 1), "api_key")
+})

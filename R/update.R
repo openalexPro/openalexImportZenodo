@@ -7,9 +7,11 @@
 #' @param project_folder Project folder.
 #' @param name Names of the sources; `NULL` (default) for all sources in `project_folder`.
 #' @param interval Check interval for this update (see [zenodo_fetch()]); `NULL`: as last time.
+#' @param api_key Zenodo token, as in [zenodo_fetch()].
 #' @return Invisibly, the names of the sources updated.
 #' @export
-zenodo_update <- function(project_folder, name = NULL, interval = NULL) {
+zenodo_update <- function(project_folder, name = NULL, interval = NULL,
+                          api_key = zenodo_api_key()) {
   name <- name %||% zenodo_names(project_folder)
   for (n in name) {
     rec_file <- file.path(project_folder, "raw", n, "_query.json")
@@ -20,7 +22,7 @@ zenodo_update <- function(project_folder, name = NULL, interval = NULL) {
     zenodo_fetch(community = s$community, query = s$query, ids = s$ids,
                  communities = s$communities, resource_type = s$resource_type,
                  from = s$from, to = s$to, interval = interval, select = s$select,
-                 project_folder = project_folder, name = n)
+                 project_folder = project_folder, name = n, api_key = api_key)
   }
   invisible(name)
 }

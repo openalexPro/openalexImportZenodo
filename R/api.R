@@ -9,6 +9,32 @@ api_key <- function(name) {
   key
 }
 
+#' Zenodo token
+#'
+#' The default `api_key` of [zenodo_fetch()] and [zenodo_update()]: the environment
+#' variable `API_zenodo_ro`, else the keyring entry `API_zenodo_ro` (if the keyring package
+#' is installed). A token (no scopes needed, from
+#' <https://zenodo.org/account/settings/applications>) allows 100 instead of 25 records per
+#' request.
+#'
+#' @return The token, or `NULL` if none is found.
+#' @export
+zenodo_api_key <- function() {
+  key <- api_key("API_zenodo_ro")
+  if (nzchar(key)) key
+}
+
+# Token for zenodo_get(): zenodo_fetch() sets `.token$key` for its run ("" = anonymous);
+# outside of it, zenodo_api_key().
+.token <- new.env()
+zenodo_token <- function() .token$key %||% zenodo_api_key() %||% ""
+check_api_key <- function(api_key) {
+  if (!is.null(api_key) && (!is.character(api_key) || length(api_key) != 1 || is.na(api_key))) {
+    stop("`api_key` must be NULL or a single string.", call. = FALSE)
+  }
+  api_key %||% ""
+}
+
 # Requests sent in this R session (reported in _query.json).
 zenodo_requests <- local({
   n <- 0
@@ -19,7 +45,7 @@ zenodo_requests <- local({
 })
 
 # GET a Zenodo API URL and return the parsed JSON, in the InvenioRDM format.
-# Sends the Zenodo token API_zenodo_ro when available (allows 100 records per page).
+# Sends the Zenodo token (zenodo_token()) when there is one (allows 100 records per page).
 # Zenodo allows 30 search requests per minute (also with a token): evenly spaced at one
 # request per 2.2 s (~27/min); a 429 waits until Zenodo's rate limit window resets.
 # Vector arguments (e.g. `type`) are repeated in the URL; NULL arguments are left out.
@@ -39,7 +65,7 @@ zenodo_get <- function(url, ...) {
       }
     ) |>
     httr2::req_error(body = function(r) httr2::resp_body_string(r))
-  token <- api_key("API_zenodo_ro")
+  token <- zenodo_token()
   if (nzchar(token)) req <- httr2::req_auth_bearer_token(req, token)
   zenodo_requests(1)
   req |>
@@ -48,4 +74,4 @@ zenodo_get <- function(url, ...) {
 }
 
 # Records per page: 100 with a token, 25 anonymously.
-zenodo_page_size <- function() if (nzchar(api_key("API_zenodo_ro"))) 100 else 25
+zenodo_page_size <- function() if (nzchar(zenodo_token())) 100 else 25
