@@ -15,7 +15,7 @@ The path of the corpus folder.
 \description{
 Builds a corpus from the stored records of seven deposits of the IPBES Zenodo
 community shipped with the package (\verb{inst/extdata/example/}), offline and
-through the same code as \code{\link[=zenodo_fetch]{zenodo_fetch()}} uses (\code{\link[=zenodo_build]{zenodo_build()}}): the corpus
+through the same code as \code{\link[=zenodo_fetch]{zenodo_fetch()}} uses (the internal \code{zenodo_build()}): the corpus
 in \verb{out/corpus/query=example/} and the link table in \verb{out/links/query=example/}.
 The deposits cite each other, have several versions, and link to DOIs,
 a handle and an ISBN outside the corpus.

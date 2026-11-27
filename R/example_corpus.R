@@ -2,7 +2,7 @@
 #'
 #' Builds a corpus from the stored records of seven deposits of the IPBES Zenodo
 #' community shipped with the package (`inst/extdata/example/`), offline and
-#' through the same code as [zenodo_fetch()] uses ([zenodo_build()]): the corpus
+#' through the same code as [zenodo_fetch()] uses (the internal `zenodo_build()`): the corpus
 #' in `out/corpus/query=example/` and the link table in `out/links/query=example/`.
 #' The deposits cite each other, have several versions, and link to DOIs,
 #' a handle and an ISBN outside the corpus.
