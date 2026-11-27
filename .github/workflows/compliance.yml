@@ -1,0 +1,10 @@
+# Compliance with the openalexPro ecosystem standard (STANDARD.md).
+# Switch fail-on to "must" once the package complies.
+on:
+  pull_request:
+    branches: [main, dev]
+jobs:
+  compliance:
+    uses: openalexPro/openalexPro_Ecosystem/.github/workflows/compliance-check.yml@main
+    with:
+      fail-on: none

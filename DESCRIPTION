@@ -26,7 +26,13 @@ Imports:
     utils
 Suggests:
     keyring,
+    openalexAPI,
+    openalexStandard,
     testthat (>= 3.0.0),
     withr
+Remotes:
+    openalexPro/openalexAPI,
+    openalexPro/openalexPro_Ecosystem/pkg/openalexStandard
 Config/testthat/edition: 3
 Config/roxygen2/version: 8.1.1
+Config/openalexPro/standard: 0.1
